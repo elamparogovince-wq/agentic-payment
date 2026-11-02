@@ -1,0 +1,1 @@
+{"name":"agentic-payment","version":"1.0.0","main":"index.js","type":"module","dependencies":{"@carts1024/velo-sdk":"^1.0.0","dotenv":"^16.4.5","ethers":"^6.13.0"}}
