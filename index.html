@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ed">
+  <meta name="description" content="AeroPay lets delivery agents earn within rules set by the cargo owner.">
+  <title>AeroPay — payments with conditions</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  <script src="/demo.js" defer></script>
+</head>
+<body>
+  <header class="site-header" id="home">
+    <a class="brand" href="#home" aria-label="AeroPay home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a>
+    <nav aria-label="Main navigation"><a href="#mission">Try the demo</a><a href="#trail">Decision log</a></nav>
+    <div class="header-status"><span class="status-dot"></span> Interactive prototype</div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="eyebrow-mark"></span> CONDITIONAL PAYMENTS FOR DELIVERY AGENTS</p>
+        <h1>Good delivery.<br><span>Fair payment.</span></h1>
+        <p class="hero-description">AeroPay lets a delivery agent earn when the agreed conditions are met. If the cargo warms up or the amount is too high, the payment stays locked.</p>
+        <a class="hero-link" href="#mission">See how it works <span aria-hidden="true">↓</span></a>
+      </div>
+      <aside class="hero-note" aria-label="Prototype details">
+        <div class="note-top"><span class="note-label">A DELIVERY, UNDER RULES</span><span class="sample-chip">SAMPLE</span></div>
+        <div class="note-route"><span class="route-origin">P</span><span class="route-stem"><i></i></span><span class="route-destination">M</span></div>
+        <div class="note-cities"><span id="origin-summary">Pasig cold store</span><span id="destination-summary">PGH · Ermita</span></div>
+        <div class="note-divider"></div>
+        <div class="note-bottom"><span>Cold-chain limit</span><strong>2°–8°C</strong></div>
+        <div class="note-bottom"><span>Agent payment cap</span><strong>₱10,000</strong></div>
+        <div class="note-bottom"><span>Sample escrow</span><strong>₱48,000</strong></div>
+      </aside>
+    </section>
+
+    <section class="demo-section" id="mission">
+      <div class="section-heading">
+        <div><p class="eyebrow section-eyebrow">THE DELIVERY SIMULATOR</p><h2>One delivery. Three outcomes.</h2></div>
+        <p class="section-intro">Choose a scenario. The agent checks the evidence against the owner’s example policy.</p>
+      </div>
+
+      <div class="demo-grid">
+        <article class="mission-card">
+          <div class="card-heading">
+            <div><span class="card-kicker">COLD-CHAIN DELIVERY</span><h3>Medical supplies <span class="batch">CC-2048</span></h3></div>
+            <span class="demo-tag"><i></i> SIMULATED</span>
+          </div>
+
+          <div class="shipment-route">
+            <div class="route-place"><span class="place-marker origin-marker">P</span><div><small>PICKUP</small><strong id="pickup-label">Pasig cold store</strong></div></div>
+            <div class="route-connector"><span></span><small id="route-distance">Choose both points</small></div>
+            <div class="route-place"><span class="place-marker destination-marker">D</span><div><small>DELIVERY</small><strong id="delivery-label">Philippine General Hospital</strong></div></div>
+          </div>
+
+          <div class="map-picker">
+            <div class="map-picker-head">
+              <div><strong>Choose route locations</strong><small>Search for a place or click the map to drop a pin.</small></div>
+              <div class="point-switch" role="group" aria-label="Choose which route point to set">
+                <button class="point-button selected" type="button" data-point="pickup" aria-pressed="true">Pickup</button>
+                <button class="point-button" type="button" data-point="delivery" aria-pressed="false">Delivery</button>
+              </div>
+            </div>
+            <form class="place-search" id="place-search-form">
+              <label class="visually-hidden" for="place-query">Search for a place</label>
+              <input id="place-query" name="place" type="search" placeholder="Search a city, address, or landmark" autocomplete="off" required>
+              <button id="place-search-button" type="submit">Search</button>
+            </form>
+            <p class="map-status" id="map-status" aria-live="polite">Select Pickup, then search or click on the map.</p>
+            <div id="route-map" role="application" aria-label="Interactive map. Click to set the selected route point.">
+              <div class="map-loading" id="map-loading">Loading map…</div>
+            </div>
+            <div class="map-credit"><span>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a></span><span>Manual search · max 1 request/sec · <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noreferrer">search policy</a></span></div>
+            <div class="place-results" id="place-results" aria-live="polite"></div>
+          </div>
+
+          <div class="evidence-heading"><span>DELIVERY EVIDENCE</span><span>Example readings</span></div>
+          <div class="evidence-grid">
+            <div class="evidence-card"><div class="evidence-icon temperature-icon" aria-hidden="true">°</div><div class="evidence-copy"><span>Temperature</span><small>Allowed: 2°–8°C</small></div><strong class="evidence-value" id="temperature">5.2<span>°C</span></strong><div class="temperature-track"><i id="temp-bar"></i></div></div>
+            <div class="evidence-card"><div class="evidence-icon location-icon" aria-hidden="true">↗</div><div class="evidence-copy"><span>Destination</span><small id="geofence-label">PGH, Ermita · sample geofence</small></div><strong class="location-value" id="checkpoint">Reached <b>✓</b></strong></div>
+          </div>
+
+          <div class="scenario-area">
+            <div class="scenario-heading"><strong>Choose a scenario</strong><span id="device-status">In transit</span></div>
+            <div class="scenario-buttons" role="group" aria-label="Choose delivery scenario">
+              <button class="scenario-btn selected" data-scenario="success" aria-pressed="true">Within limits</button>
+              <button class="scenario-btn" data-scenario="breach" aria-pressed="false">Temperature breach</button>
+              <button class="scenario-btn" data-scenario="overcap" aria-pressed="false">Over payment cap</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="decision-card" id="policy">
+          <div class="decision-header"><div><span class="card-kicker">AGENT POLICY</span><h3>Payment decision</h3></div><span class="policy-mark" aria-hidden="true">A</span></div>
+          <div class="decision-box allow" id="decision-box" aria-live="polite">
+            <span class="decision-icon" id="decision-icon" aria-hidden="true">✓</span>
+            <div class="decision-message"><strong id="decision-title">Conditions met</strong><p id="decision-copy">The request fits the example policy.</p></div>
+            <span class="decision-state" id="decision-state">ALLOW</span>
+          </div>
+
+          <div class="policy-list" aria-label="Policy checks">
+            <div class="policy-row"><span class="check-mark good" id="check-temp">✓</span><div><strong>Temperature is safe</strong><small><span id="check-temp-detail">5.2°C, within range</span></small></div><span class="check-result good" id="result-temp">PASS</span></div>
+            <div class="policy-row"><span class="check-mark good" id="check-location">✓</span><div><strong>Delivery location reached</strong><small id="policy-geofence-label">PGH, Ermita · sample geofence</small></div><span class="check-result good">PASS</span></div>
+            <div class="policy-row"><span class="check-mark good" id="check-cap">✓</span><div><strong>Payment is within cap</strong><small><span id="amount-line">₱180</span> · max ₱10,000</small></div><span class="check-result good" id="result-cap">PASS</span></div>
+            <div class="policy-row"><span class="check-mark good">✓</span><div><strong>Agent is authorized</strong><small>Example owner policy</small></div><span class="check-result good">PASS</span></div>
+          </div>
+
+          <div class="payment-summary"><div><span>REQUESTED PAYMENT</span><strong id="payout-amount">₱180</strong></div><div><span>PAY TO</span><strong id="recipient-label">Philippine General Hospital</strong></div><p class="price-note">Estimate: ₱80 base + ₱10 per straight-line km</p></div>
+          <button id="settle-button" class="settle-button"><span id="settle-label">Eligible under example policy</span><span aria-hidden="true">↗</span></button>
+          <p class="demo-disclaimer" id="button-note">Simulation only. No transaction will be sent.</p>
+        </article>
+      </div>
+      <dialog class="preview-dialog" id="payment-dialog" aria-labelledby="dialog-title">
+        <div class="dialog-check" aria-hidden="true">✓</div>
+        <p class="dialog-kicker">AUTHORIZATION PREVIEW</p>
+        <h2 id="dialog-title">The policy allows this payment.</h2>
+        <p class="dialog-description">This local demo does not send a transaction. In a live setup, the agent would request authorization from the Stellar Testnet contract.</p>
+        <div class="dialog-detail"><span>Payment amount</span><strong id="dialog-amount">₱180</strong></div>
+        <div class="dialog-detail"><span>Recipient</span><strong id="dialog-recipient">Philippine General Hospital</strong></div>
+        <form method="dialog"><button class="dialog-close">Back to delivery</button></form>
+      </dialog>
+    </section>
+
+    <section class="log-section" id="trail">
+      <div class="log-heading"><div><p class="eyebrow section-eyebrow">WHY THE AGENT DECIDED</p><h2>Decision log</h2></div><span class="log-count" id="trail-count">4 steps</span></div>
+      <div class="timeline" id="timeline">
+        <div class="event"><span class="event-icon" aria-hidden="true">01</span><div><b>Reading received</b><small>Cold-chain tag · 5.2°C · sample data</small></div><span class="event-state">IN RANGE</span></div>
+        <div class="event"><span class="event-icon" aria-hidden="true">02</span><div><b>Destination reached</b><small>PGH, Ermita geofence · sample data</small></div><span class="event-state">REACHED</span></div>
+        <div class="event"><span class="event-icon" aria-hidden="true">03</span><div><b>Policy checked</b><small>Temperature, location, and payment cap</small></div><span class="event-state">ALLOW</span></div>
+        <div class="event last"><span class="event-icon" aria-hidden="true">04</span><div><b>Payment can proceed</b><small>Demo only · no transaction submitted</small></div><span class="event-state pending">PREVIEW</span></div>
+      </div>
+    </section>
+
+    <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a><p>Prototype for conditional agent payments.</p><span class="footer-note">SAMPLE DATA · NO REAL FUNDS</span></footer>
+  </main>
+</body>
+</html>
