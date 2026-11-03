@@ -1,1 +1,14 @@
-{"name":"agentic-payment","version":"1.0.0","main":"index.js","type":"module","dependencies":{"@carts1024/velo-sdk":"^1.0.0","dotenv":"^16.4.5","ethers":"^6.13.0"}}
+{
+  "name": "agentic-payment",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Policy-bound delivery payments on Stellar Testnet",
+  "scripts": {
+    "start": "node server.js",
+    "agent:demo": "node agent.js --demo",
+    "agent:check": "node agent.js --check",
+    "agent:pay": "node agent.js --pay"
+  },
+  "engines": { "node": ">=22.23.4" }
+}
