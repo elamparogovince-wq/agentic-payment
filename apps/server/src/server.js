@@ -89,7 +89,9 @@ app.post('/api/velo/checkout', express.json({ limit: '12kb' }), async (request, 
     return response.status(500).json({ error: 'VELO_CHECKOUT_ASSET is invalid.' });
   }
 
-  const appBase = process.env.APP_BASE_URL?.trim() || 'http://localhost:5173';
+  const appBase = process.env.APP_BASE_URL?.trim()
+    || process.env.RENDER_EXTERNAL_URL?.trim()
+    || 'http://localhost:5173';
   let successUrl;
   let cancelUrl;
   try {

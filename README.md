@@ -90,6 +90,12 @@ README.md               judging and setup guide
 
 Without credentials, the page displays setup status and the offline CLI remains available. It does not pretend a simulated result is a Testnet payment.
 
+## Deploy on Render
+
+This repository includes a Render Blueprint for a free Node web service. In Render, create a Blueprint from this repository and select the `aeropay-demo` branch. Render reads `render.yaml`, builds the Vite app, serves it from Express, and checks `/api/health`. Render supplies `RENDER_EXTERNAL_URL`, which the server uses for Velo's return links unless `APP_BASE_URL` is set explicitly.
+
+After the first deploy, add the Velo and Noir values from your local `.env` to the service's Environment settings. Never commit those secrets. Configure the Velo webhook URL as `https://<your-render-host>/api/webhooks/velo`, then redeploy and complete a Testnet rehearsal. Free services can spin down after inactivity; open the site before presenting and allow the first request time to wake it.
+
 ## Environment variables
 
 | Name | What it is | Where to get it |

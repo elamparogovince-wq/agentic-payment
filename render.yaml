@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: aeropay-agentic-payment
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start --workspace @aeropay/server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: VELO_CHECKOUT_ASSET
+        value: USDC
+      - key: VELO_CHECKOUT_AMOUNT
+        value: "1.00"
+      - key: PAYMENT_ASSET_LABEL
+        value: USDC
