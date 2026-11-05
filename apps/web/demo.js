@@ -15,6 +15,192 @@ let map;
 let routeLine;
 let lastSearchAt = 0;
 let selectedScenario = 'success';
+let apiServices = null;
+let veloPollTimer = null;
+
+function currentShipmentId() {
+  let id = sessionStorage.getItem('aeropay.shipmentId');
+  if (!id) {
+    id = `shp_${crypto.randomUUID()}`;
+    sessionStorage.setItem('aeropay.shipmentId', id);
+  }
+  return id;
+}
+
+function setVeloStatus(message, tone = '') {
+  const note = $('velo-status');
+  const pill = $('velo-pill');
+  note.textContent = message;
+  pill.className = `live-pill ${tone}`.trim();
+  pill.textContent = tone === 'good' ? 'CONFIRMED' : tone === 'wait' ? 'PENDING' : tone === 'bad' ? 'ACTION NEEDED' : 'TESTNET';
+}
+
+async function loadServiceStatus() {
+  try {
+    const response = await fetch('/api/health');
+    if (!response.ok) throw new Error('API unavailable');
+    apiServices = await response.json();
+    $('service-status').innerHTML = `<span class="status-dot"></span> ${apiServices.velo.configured ? 'Velo Testnet' : 'Server connected'}`;
+    const checkoutButton = $('velo-checkout-button');
+    const checkoutAmount = apiServices.velo.checkoutAmount;
+    const checkoutAsset = apiServices.velo.checkoutAsset;
+    checkoutButton.textContent = apiServices.velo.configured
+      ? `Pay booking fee · ${checkoutAmount} ${checkoutAsset} on Testnet`
+      : 'Velo Testnet key needed on server';
+    checkoutButton.disabled = !apiServices.velo.configured;
+    if (!apiServices.velo.configured) {
+      setVeloStatus('Add VELO_API_KEY to the server .env file to enable Testnet checkout.', 'bad');
+    } else {
+      setVeloStatus('Booking fee is separate from the PHP route estimate and the Noir carrier payout.');
+    }
+    $('dialog-amount').textContent = apiServices.noir.configured
+      ? `${apiServices.noir.payoutAmount} ${apiServices.noir.payoutAssetLabel} · Testnet`
+      : 'Noir Testnet key not configured';
+    if (apiServices.noir.configured && apiServices.velo.configured) {
+      $('service-status').classList.add('services-ready');
+    }
+  } catch {
+    $('service-status').innerHTML = '<span class="status-dot"></span> Server unavailable';
+    $('velo-checkout-button').disabled = true;
+    setVeloStatus('Start the AeroPay full-stack server to connect Velo and Noir.', 'bad');
+  }
+}
+
+function showAgentResult(result) {
+  const icon = $('agent-result-icon');
+  const title = $('dialog-title');
+  const copy = $('agent-result-copy');
+  const link = $('agent-transaction-link');
+  const labels = {
+    authorized: ['Payment authorized', 'good', '✓'],
+    approved: ['Policy passed · no payment sent', 'good', '✓'],
+    denied: ['Payment refused', 'bad', '!'],
+    waiting_for_velo: ['Waiting for Velo booking', 'wait', '…'],
+    needs_setup: ['Testnet setup is incomplete', 'wait', '…'],
+    unknown: ['Transaction status unknown', 'wait', '?'],
+  };
+  const [heading, tone, glyph] = labels[result.decision] || ['Agent decision', '', 'A'];
+  icon.className = `dialog-check ${tone}`.trim();
+  icon.textContent = glyph;
+  title.textContent = heading;
+  copy.textContent = result.reason || result.error || 'The server returned an agent decision.';
+  $('dialog-booking-status').textContent = result.veloStatus || ($('velo-pill').textContent === 'CONFIRMED' ? 'Confirmed by Velo' : 'See booking status in panel');
+  if (result.transactionHash) {
+    link.href = `https://stellar.expert/explorer/testnet/tx/${encodeURIComponent(result.transactionHash)}`;
+    link.hidden = false;
+    link.textContent = `View Testnet transaction ${result.transactionHash.slice(0, 12)}… ↗`;
+  } else {
+    link.hidden = true;
+    link.removeAttribute('href');
+  }
+  const lastEvent = document.querySelector('#timeline .event.last');
+  if (lastEvent) {
+    lastEvent.querySelector('b').textContent = result.decision === 'authorized'
+      ? 'Noir authorized the payout'
+      : result.decision === 'denied'
+        ? 'Escrow remains locked'
+        : result.decision === 'waiting_for_velo'
+          ? 'Waiting for Velo confirmation'
+          : result.decision === 'unknown'
+            ? 'Check Testnet before retrying'
+            : 'Agent decision recorded';
+    lastEvent.querySelector('small').textContent = result.transactionHash
+      ? `Stellar Testnet · ${result.transactionHash}`
+      : result.reason || 'No transaction was submitted.';
+    const state = lastEvent.querySelector('.event-state');
+    state.textContent = result.decision.toUpperCase().replaceAll('_', ' ');
+    state.classList.toggle('pending', result.decision === 'waiting_for_velo' || result.decision === 'needs_setup');
+  }
+}
+
+async function runAgent() {
+  const scenario = scenarios[selectedScenario];
+  const dialog = $('payment-dialog');
+  $('agent-transaction-link').hidden = true;
+  $('agent-result-icon').className = 'dialog-check wait';
+  $('agent-result-icon').textContent = '…';
+  $('dialog-title').textContent = 'The agent is checking delivery.';
+  $('agent-result-copy').textContent = 'Checking delivery evidence and the Testnet policies on the server…';
+  $('dialog-booking-status').textContent = $('velo-pill').textContent;
+  if (!dialog.open) dialog.showModal();
+  $('settle-button').disabled = true;
+  try {
+    const response = await fetch('/api/agent/deliver', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: currentShipmentId(),
+        scenario: selectedScenario,
+        temperatureC: scenario.temp,
+        checkpointMatched: scenario.location,
+      }),
+    });
+    const result = await response.json();
+    showAgentResult(result);
+  } catch {
+    showAgentResult({ decision: 'unknown', reason: 'Could not reach the AeroPay server. No result was confirmed.' });
+  } finally {
+    $('settle-button').disabled = false;
+  }
+}
+
+async function checkVeloBooking({ poll = false } = {}) {
+  const shipmentId = sessionStorage.getItem('aeropay.shipmentId');
+  if (!shipmentId) return false;
+  try {
+    const response = await fetch(`/api/velo/shipments/${encodeURIComponent(shipmentId)}`);
+    if (response.status === 404) return false;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Velo status check failed.');
+    $('dialog-booking-status').textContent = data.status;
+    if (data.confirmed) {
+      setVeloStatus(`Velo confirmed ${data.amount} ${data.asset} on Stellar Testnet.`, 'good');
+      $('velo-checkout-button').textContent = 'Velo booking paid · Testnet';
+      $('velo-checkout-button').disabled = true;
+      if (veloPollTimer) clearInterval(veloPollTimer);
+      veloPollTimer = null;
+      return true;
+    }
+    const failed = ['failed', 'canceled', 'cancelled'].includes(String(data.status).toLowerCase());
+    setVeloStatus(`Velo booking status: ${data.status}. ${failed ? 'Create a new checkout to retry.' : 'Waiting for ledger confirmation…'}`, failed ? 'bad' : 'wait');
+    if (poll && !veloPollTimer && !failed) {
+      let attempts = 0;
+      veloPollTimer = setInterval(async () => {
+        attempts += 1;
+        await checkVeloBooking();
+        if (attempts >= 18 && veloPollTimer) {
+          clearInterval(veloPollTimer);
+          veloPollTimer = null;
+        }
+      }, 2500);
+    }
+    return false;
+  } catch (error) {
+    setVeloStatus(error.message, 'bad');
+    return false;
+  }
+}
+
+async function createVeloCheckout() {
+  const button = $('velo-checkout-button');
+  button.disabled = true;
+  setVeloStatus('Creating a Testnet booking session with Velo…', 'wait');
+  try {
+    const shipmentId = currentShipmentId();
+    const response = await fetch('/api/velo/checkout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ shipmentId, idempotencyKey: `aeropay_${shipmentId}` }),
+    });
+    const session = await response.json();
+    if (!response.ok) throw new Error(session.error || 'Could not create the Velo checkout.');
+    setVeloStatus(`Opening Velo Testnet checkout for ${session.amount} ${session.asset}…`, 'wait');
+    window.location.assign(session.checkoutUrl);
+  } catch (error) {
+    setVeloStatus(error.message, 'bad');
+    button.disabled = !apiServices?.velo.configured;
+  }
+}
 
 function shortPlaceName(name) {
   return name.split(',').slice(0, 2).join(',').trim();
@@ -215,14 +401,16 @@ function showScenario(key) {
     ? 'The request fits the example policy. Review it before authorization.'
     : !tempOk ? 'Temperature exceeded the safe range. Escrow remains locked.' : 'This request exceeds the agent’s per-payment cap.';
   $('decision-state').textContent = allowed ? 'ALLOW' : 'DENY';
-  $('settle-button').disabled = !allowed;
-  $('settle-label').textContent = allowed ? 'Review authorization' : 'Escrow stays locked';
-  $('button-note').textContent = allowed ? 'Demo only · no blockchain transaction will be sent.' : 'Denied by policy · no payment submitted.';
+  $('settle-button').disabled = false;
+  $('settle-label').textContent = key === 'success' ? 'Run delivery agent' : 'Run refusal check';
+  $('button-note').textContent = allowed
+    ? 'The agent decides. A live Noir payout requires a Velo-confirmed booking and an active Testnet policy.'
+    : 'Run the agent to see why the request is refused. No payout is sent for a failed check.';
   timeline.innerHTML = `
     <div class="event"><span class="event-icon">01</span><div><b>Reading received</b><small>Cold-chain tag · ${scenario.temp.toFixed(1)}°C · sample data</small></div><span class="event-state">${tempOk ? 'IN RANGE' : 'BREACH'}</span></div>
     <div class="event"><span class="event-icon">02</span><div><b>Destination reached</b><small>${points.delivery.label} · sample location</small></div><span class="event-state">REACHED</span></div>
     <div class="event"><span class="event-icon">03</span><div><b>Policy checked</b><small>${capOk ? `${formatPHP(amount)} is within the ₱10,000 cap` : `${formatPHP(amount)} exceeds the ₱10,000 cap`}</small></div><span class="event-state">${allowed ? 'ALLOW' : 'DENY'}</span></div>
-    <div class="event last"><span class="event-icon">04</span><div><b>${allowed ? 'Authorization preview' : 'Escrow remains locked'}</b><small>${allowed ? 'Simulation only · no transaction submitted' : 'The request failed the example policy'}</small></div><span class="event-state ${allowed ? 'pending' : ''}">${allowed ? 'PREVIEW' : 'BLOCKED'}</span></div>`;
+    <div class="event last"><span class="event-icon">04</span><div><b>Waiting for agent decision</b><small>${allowed ? 'The agent will check Velo booking and Noir policy' : 'No payout will be sent unless every check passes'}</small></div><span class="event-state pending">READY</span></div>`;
   $('trail-count').textContent = '4 steps';
   document.querySelectorAll('.scenario-btn').forEach((button) => {
     const selected = button.dataset.scenario === key;
@@ -238,10 +426,20 @@ $('place-search-form').addEventListener('submit', searchPlace);
 document.querySelectorAll('.scenario-btn').forEach((button) => {
   button.addEventListener('click', () => showScenario(button.dataset.scenario));
 });
-$('settle-button').addEventListener('click', () => {
-  if ($('settle-button').disabled) return;
-  $('dialog-amount').textContent = formatPHP(paymentAmount(scenarios[selectedScenario]));
-  $('payment-dialog').showModal();
-});
+$('settle-button').addEventListener('click', runAgent);
+$('velo-checkout-button').addEventListener('click', createVeloCheckout);
 updateRouteLabels();
 initializeMap();
+loadServiceStatus().then(async () => {
+  const query = new URLSearchParams(window.location.search);
+  if (query.get('velo') === 'return') {
+    setVeloStatus('Returned from Velo. Checking the Testnet ledger…', 'wait');
+    await checkVeloBooking({ poll: true });
+    history.replaceState({}, '', window.location.pathname);
+  } else if (query.get('velo') === 'cancel') {
+    setVeloStatus('Checkout was canceled. No Velo payment was confirmed.', 'bad');
+    history.replaceState({}, '', window.location.pathname);
+  } else {
+    await checkVeloBooking({ poll: true });
+  }
+});

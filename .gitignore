@@ -1,3 +1,6 @@
 node_modules/
 .env
 npm-debug.log*
+apps/web/dist/
+data/
+.pnpm-store/

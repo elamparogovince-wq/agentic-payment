@@ -9,13 +9,13 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="/styles.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
-  <script src="/demo.js" defer></script>
+  <script type="module" src="/demo.js"></script>
 </head>
 <body>
   <header class="site-header" id="home">
     <a class="brand" href="#home" aria-label="AeroPay home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a>
     <nav aria-label="Main navigation"><a href="#mission">Try the demo</a><a href="#trail">Decision log</a></nav>
-    <div class="header-status"><span class="status-dot"></span> Interactive prototype</div>
+    <div class="header-status" id="service-status"><span class="status-dot"></span> Connecting to Testnet services…</div>
   </header>
 
   <main>
@@ -108,18 +108,25 @@
             <div class="policy-row"><span class="check-mark good">✓</span><div><strong>Agent is authorized</strong><small>Example owner policy</small></div><span class="check-result good">PASS</span></div>
           </div>
 
-          <div class="payment-summary"><div><span>REQUESTED PAYMENT</span><strong id="payout-amount">₱180</strong></div><div><span>PAY TO</span><strong id="recipient-label">Philippine General Hospital</strong></div><p class="price-note">Estimate: ₱80 base + ₱10 per straight-line km</p></div>
-          <button id="settle-button" class="settle-button"><span id="settle-label">Eligible under example policy</span><span aria-hidden="true">↗</span></button>
-          <p class="demo-disclaimer" id="button-note">Simulation only. No transaction will be sent.</p>
+          <div class="payment-summary"><div><span>ROUTE ESTIMATE</span><strong id="payout-amount">₱180</strong></div><div><span>DELIVERY RECIPIENT</span><strong id="recipient-label">Philippine General Hospital</strong></div><p class="price-note">Illustrative PHP quote only. Velo checkout uses a separate Testnet asset amount.</p></div>
+          <div class="live-payment-box">
+            <div class="live-payment-heading"><span>SHIPMENT BOOKING · VELO TESTNET</span><span class="live-pill" id="velo-pill">CHECKING</span></div>
+            <button id="velo-checkout-button" class="velo-checkout-button" type="button">Create Velo booking checkout</button>
+            <p class="integration-note" id="velo-status" aria-live="polite">Checking Velo Testnet setup…</p>
+          </div>
+          <button id="settle-button" class="settle-button" type="button"><span id="settle-label">Run delivery agent</span><span aria-hidden="true">↗</span></button>
+          <p class="demo-disclaimer" id="button-note">The agent decides from sample evidence; only successful Testnet authorization submits a transaction.</p>
         </article>
       </div>
       <dialog class="preview-dialog" id="payment-dialog" aria-labelledby="dialog-title">
-        <div class="dialog-check" aria-hidden="true">✓</div>
-        <p class="dialog-kicker">AUTHORIZATION PREVIEW</p>
-        <h2 id="dialog-title">The policy allows this payment.</h2>
-        <p class="dialog-description">This local demo does not send a transaction. In a live setup, the agent would request authorization from the Stellar Testnet contract.</p>
-        <div class="dialog-detail"><span>Payment amount</span><strong id="dialog-amount">₱180</strong></div>
+        <div class="dialog-check" id="agent-result-icon" aria-hidden="true">A</div>
+        <p class="dialog-kicker">AGENT DECISION · STELLAR TESTNET</p>
+        <h2 id="dialog-title">The agent is checking delivery.</h2>
+        <p class="dialog-description" id="agent-result-copy" aria-live="polite">The server checks the sample evidence and the Noir policy before it can authorize any payout.</p>
+        <div class="dialog-detail"><span>Velo booking</span><strong id="dialog-booking-status">Not started</strong></div>
+        <div class="dialog-detail"><span>Agent payout</span><strong id="dialog-amount">Configured on server</strong></div>
         <div class="dialog-detail"><span>Recipient</span><strong id="dialog-recipient">Philippine General Hospital</strong></div>
+        <a class="transaction-link" id="agent-transaction-link" hidden target="_blank" rel="noreferrer">View Testnet transaction ↗</a>
         <form method="dialog"><button class="dialog-close">Back to delivery</button></form>
       </dialog>
     </section>

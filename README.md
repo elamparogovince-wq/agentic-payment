@@ -1,121 +1,125 @@
 # AeroPay
 
-### Trust the delivery. Release the payment.
+One-line pitch: A delivery agent releases a cold-chain carrier payout through Noir only when delivery evidence and the owner's Testnet policy pass; Velo confirms the shipper's booking payment.
 
-AeroPay is a policy-bound payment agent for cold-chain deliveries. The cargo owner funds escrow and sets the agent’s limits. At delivery, the agent checks the sensor evidence, destination checkpoint, and payment cap. A failed check keeps the funds locked.
+**Live website:** [Add the deployed public URL before submission]
 
-**The live browser experience is an interactive simulation.** It needs no wallet or API key and does not send transactions. The separate command-line flow can read the real Stellar Testnet policy and, only when explicitly requested, submit an authorization.
+**Demo video (2 min):** [Add the two-minute end-to-end demo link before submission]
 
-The browser estimates its demo delivery payment as ₱80 plus ₱10 per straight-line kilometre, rounded to the nearest ₱10. This is not a road-route quote, currency conversion, or on-chain PHP payment; the Testnet CLI uses the asset contract configured in `.env`.
+**Team:** [Name] ([Discord handle])
 
-## Try it in under a minute
+## Problem
 
-You need Node.js 22.23.4 or newer.
+Cold-chain deliveries can arrive late, warm, or at the wrong destination. A supplier still needs a clear way to get paid, while the cargo owner needs a payment that stops when the delivery conditions fail.
 
-```bash
-git clone https://github.com/elamparogovince-wq/agentic-payment.git
-cd agentic-payment
-npm start
+## Solution
+
+AeroPay pairs a Velo Testnet booking checkout with a rule-based delivery agent. The server treats Velo's ledger-confirmed booking as the paid order, then checks the delivery evidence and the owner's Noir policy before authorizing the carrier payout from escrow. The temperature and destination readings in this prototype are sample inputs, not authenticated sensor or GPS attestations.
+
+## How the agentic payment works
+
+1. The shipper creates and pays a Testnet booking checkout through Velo.
+2. Velo confirms the PaymentIntent against Stellar ledger data and sends a signed webhook to AeroPay. The server verifies the signature and can also retrieve the PaymentIntent status from Velo.
+3. At delivery, the app asks the server to run the agent with a sample temperature and checkpoint result. The browser never receives the Noir or Velo secrets.
+4. The agent refuses immediately when the temperature is outside 2–8°C or the checkpoint is missing.
+5. For a safe delivery, the server requires the Velo booking to be confirmed, loads the device policy with the Noir SDK, and calls `checkPayment`.
+6. Only when the Noir policy allows the configured Testnet amount does the agent call `authorizePayment`. A failed check submits no payout; a successful authorization returns a Stellar Testnet transaction hash. The merchant claims the pending balance separately through Noir.
+
+The over-cap scenario asks Noir to check one stroop above the active policy maximum, then displays the refusal. That scenario never calls `authorizePayment`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Shipper[Shipper] --> Web[apps/web · Vite UI]
+  Web --> Server[apps/server · Express API]
+  Server --> Velo[Velo SDK · Testnet checkout/status/webhook]
+  Velo --> Ledger[(Stellar Testnet ledger)]
+  Server --> Agent[packages/agent · rule-based delivery agent]
+  Agent --> Noir[Noir SDK · deployed Soroban contracts]
+  Noir --> Ledger
+  Shared[packages/shared · delivery policy] --> Agent
 ```
 
-Open [http://localhost:4173](http://localhost:4173), then select **Delivered safely**, **Temperature breach**, and **Over spend cap**. Watch the policy checks and decision trail change. The blocked scenarios demonstrate the safety behavior: no payment is submitted and escrow stays protected.
+## Noir integration
 
-To see the same three cases in your terminal:
+- Noir SDK: `@noirx402/agent-sdk` `0.3.0`.
+- Contracts: the SDK's deployed Stellar Testnet `device_registry`, `agent_registry`, and `payment_escrow` contracts.
+- `getPolicy`, `checkPayment`, and `authorizePayment` are called by the server-side agent in [`packages/agent/src/index.js`](packages/agent/src/index.js).
+- The agent key, device hash, merchant address, asset contract, and payout amount stay in the server `.env`.
 
-```bash
-npm run agent:demo
-```
+## Velo integration
 
-## What makes it agentic
+- Velo SDK: `@carts1024/velo-sdk` `0.1.0-alpha.4` (server-side Testnet SDK).
+- Velo creates a separate fixed-amount shipment booking checkout in the configured Testnet asset. This is not the PHP route estimate and is not a PHP conversion.
+- AeroPay retrieves PaymentIntent status from Velo and verifies `payment.succeeded` webhooks using the raw request body and `x-velo-signature` header.
+- Checkout, status, and webhook code is in [`apps/server/src/server.js`](apps/server/src/server.js). The browser only calls AeroPay's API; it never sees the Velo API key or webhook secret.
 
-The agent evaluates evidence and policy at the point of delivery. Its authority is intentionally constrained: a device-specific policy names the authorized agent, allowed asset, per-payment maximum, and expiry. Noir’s Soroban contracts enforce the policy on-chain; application logic alone cannot raise the cap.
+This is a single-process hackathon prototype. Checkout mappings, recent webhook IDs, and agent decisions are held in memory and reset when the server restarts. Delivery readings and the selected checkpoint are user-provided sample values; they are not signed sensor or GPS attestations.
+
+## Testnet proof
+
+No live transaction has been recorded in this repository yet. Add at least one Stellar Expert link to a demo transaction before submitting:
+
+- Noir carrier payout: [Add Stellar Expert Testnet transaction link]
+- Velo booking payment: [Add Stellar Expert Testnet transaction link]
+
+## Repo structure
 
 ```text
-Cold-chain tag ──> temperature + device hash ──┐
-Delivery site ───> checkpoint evidence ────────┼──> policy check ──> authorize or refuse
-Owner policy ────> agent + asset + amount cap ─┘                         │
-                                                         escrow stays locked on refusal
+apps/
+  web/                  Vite frontend
+  server/               Express API, Velo checkout/webhook, delivery endpoint
+packages/
+  agent/                rule-based agent and Noir SDK calls
+  shared/               delivery policy shared by server and agent
+docs/                   screenshots and demo materials
+.env.example            empty environment-variable template
+package.json            npm workspaces and root commands
+README.md               judging and setup guide
 ```
 
-### The 90-second pitch
+## Run it locally
 
-“A delivery agent should be able to get paid without getting the owner’s wallet. AeroPay lets an owner pre-fund escrow and grant one device-linked agent a narrow policy. When a cold-chain shipment arrives, the agent checks the temperature, destination, allowed asset, and payment cap. If everything passes, it can authorize the payment. If the cargo warmed up or the amount is too high, the contract refuses and the funds stay protected. This demo shows both outcomes, and the Testnet CLI can check the deployed policy before anyone submits a payment.”
+1. Install a supported Node.js version: `^22.23.4`, `^24.22.1`, or `>=26.12.1`.
+2. Install the Noir Chrome extension and create/fund the required Stellar Testnet owner, agent, and merchant setup. Configure the deployed Noir policy and escrow.
+3. From the repository root, run `npm install` to install workspace dependencies and create the npm lockfile.
+4. Copy `.env.example` to `.env`; add the Velo Testnet API key and Noir Testnet values on the server. Never commit `.env`.
+5. Run `npm run dev`. Open the Vite app at `http://localhost:5173`; the API runs at `http://localhost:4173`.
+6. For production, set `APP_BASE_URL` to the deployed public HTTPS URL, configure Velo's webhook destination as `https://<your-host>/api/webhooks/velo`, build the web app with `npm run build`, and start the server with `npm run start --workspace @aeropay/server`.
 
-## Optional: real Testnet policy check
+Without credentials, the page displays setup status and the offline CLI remains available. It does not pretend a simulated result is a Testnet payment.
 
-The web dashboard uses sample evidence. To query a real policy on Stellar Testnet, install the Noir SDK and set up a device that already has an active policy and escrow:
+## Environment variables
 
-```bash
-npm install --no-save @noirx402/agent-sdk
-Copy-Item .env.example .env   # PowerShell
-# cp .env.example .env        # macOS / Linux
-```
+| Name | What it is | Where to get it |
+| --- | --- | --- |
+| `VELO_API_KEY` | Velo Testnet API key | Create a Testnet project in the Velo Build dashboard |
+| `VELO_WEBHOOK_SECRET` | HMAC secret for Velo webhook verification | Velo project webhook settings |
+| `VELO_CHECKOUT_ASSET` | Testnet checkout asset (default `USDC`) | Select an asset enabled for the Velo Testnet project |
+| `VELO_CHECKOUT_AMOUNT` | Fixed booking checkout amount (default `1.00`) | Set a small Testnet-only demo amount |
+| `APP_BASE_URL` | Public app URL used for Velo return links | Local default is `http://localhost:5173`; use HTTPS when deployed |
+| `PORT` | Express server port | Hosting platform provides this in deployment |
+| `DEVICE_HASH` | SHA-256 hash of the Noir device/card UID | Generate from the linked card UID; see Noir setup |
+| `AGENT_SECRET` | Noir agent's Stellar Testnet secret key | Create/register the agent through Noir; keep server-side |
+| `MERCHANT_ADDRESS` | Carrier's Stellar Testnet public address | Merchant's Testnet wallet |
+| `ASSET_CONTRACT_ID` | Stellar Testnet asset contract used by Noir | The Testnet asset selected for the Noir policy |
+| `PAYMENT_AMOUNT` | Noir payout amount in the configured asset | Set within the registered Noir policy cap |
+| `PAYMENT_ASSET_LABEL` | Display label for the configured payout asset | For example, `XLM` or `USDC`; display only |
 
-Fill in `.env` with your Testnet values:
+## Screenshots
 
-```env
-DEVICE_HASH=64_character_sha256_hex_value
-AGENT_SECRET=S_your_testnet_agent_secret
-MERCHANT_ADDRESS=G_your_testnet_merchant_address
-ASSET_CONTRACT_ID=C_your_stellar_testnet_token_contract
-PAYMENT_AMOUNT=2.00
-```
+Add current screenshots of the public app, the Velo checkout/status, and both Noir allow/refuse outcomes before submission.
 
-Start with the read-only check:
+## What's next
 
-```bash
-npm run agent:check
-```
+- Connect signed cold-chain and destination evidence instead of sample inputs.
+- Run a complete Testnet rehearsal and add transaction links.
+- Deploy the app and verify the public Velo webhook can reach it.
+- Record the required two-minute demo and add the team handles.
 
-Only after you have reviewed the policy and intend to authorize the payment, run:
+## Credits
 
-```bash
-npm run agent:pay
-```
-
-`agent:pay` asks the Noir Testnet contract to authorize the payment from escrow; the merchant must separately claim pending funds. This is a real Testnet transaction. Testnet tokens have no real-world value. Never put a mainnet secret in `.env`.
-
-## How to demo it
-
-1. Start the app and introduce the cold-chain delivery problem. Use the map search or click the map to set pickup and delivery points.
-2. Select **Delivered safely**. Point to the temperature, location, and spend-cap checks.
-3. Select **Temperature breach**. Show that one failed reading changes the decision to deny and keeps escrow locked.
-4. Select **Over spend cap**. Show that the agent cannot exceed the owner’s per-payment limit.
-5. Explain that browser events are sample data; use `agent:check` to demonstrate a real, read-only policy query when a configured Testnet device is available.
-
-## Project status
-
-| Capability | Status |
-| --- | --- |
-| Interactive delivery and refusal demo | Simulated locally; no wallet needed |
-| On-chain policy read and payment check | Implemented through `@noirx402/agent-sdk`; requires a configured Testnet device |
-| On-chain authorization | Explicit `agent:pay` command; requires the agent secret and funded escrow |
-| Physical sensor, GPS attestation, device signature verification | Not integrated; browser evidence is simulated |
-| Production or mainnet use | Not ready |
-
-We say “verified” in the interface to describe the scenario’s policy outcome. The browser does not authenticate physical sensor or GPS data. That trust boundary is a future integration point, not a feature this demo claims to have solved.
-
-## Troubleshooting
-
-- **The page will not start:** check `node --version`; use Node 22.23.4 or newer.
-- **The Testnet SDK import fails:** run `npm install --no-save @noirx402/agent-sdk` from this folder.
-- **No policy found:** the device must be registered and an agent policy must already exist on Stellar Testnet.
-- **Payment refused:** inspect the contract’s returned reason, asset, amount cap, expiry, and escrow balance. A refusal does not submit a payment.
-- **Keep secrets safe:** `.env` is ignored by Git. Do not commit it, paste secrets into an issue, or use a mainnet key.
-
-## Stack
-
-- Node.js built-in HTTP server (no build step for the demo)
-- Plain HTML, CSS, and JavaScript
-- Leaflet + OpenStreetMap for the interactive route picker; place lookup runs only when Search is submitted (no autocomplete), with at least one second between requests. Follow the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/); its public endpoint is best-effort and is not a production geocoding service.
-- [`@noirx402/agent-sdk`](https://www.npmjs.com/package/@noirx402/agent-sdk) for the optional Stellar Testnet policy check and authorization
-- Noir device registry, agent registry, and payment escrow contracts
-
-## Next steps for the team
-
-1. Connect a real NFC tag or signed sensor feed and verify the source of each reading.
-2. Add a merchant-facing claim screen and show the confirmed Testnet transaction in a Stellar explorer.
-3. Record a short demo video showing one accepted and two refused deliveries.
-4. Add automated tests for the policy scenarios and a live Testnet smoke test.
-
-The project is a hackathon prototype, not audited payment software.
+- [Noir](https://github.com/noirx402/noir) and `@noirx402/agent-sdk` for constrained Testnet agent payments.
+- [Velo](https://www.velo-build.dev) and `@carts1024/velo-sdk` for Testnet checkout, status retrieval, and signed webhooks.
+- [Leaflet](https://leafletjs.com/) and [OpenStreetMap](https://www.openstreetmap.org/copyright) for the route picker.

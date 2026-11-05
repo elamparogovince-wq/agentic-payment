@@ -1,0 +1,14 @@
+{
+  "name": "@aeropay/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@carts1024/velo-sdk": "0.1.0-alpha.4",
+    "dotenv": "16.6.1",
+    "express": "5.3.0"
+  }
+}

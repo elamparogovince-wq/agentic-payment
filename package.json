@@ -1,14 +1,25 @@
 {
-  "name": "agentic-payment",
-  "version": "1.1.0",
+  "name": "aeropay",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Policy-bound delivery payments on Stellar Testnet",
+  "description": "A delivery agent that pays through Noir and uses Velo for verified Testnet checkout.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "start": "node server.js",
-    "agent:demo": "node agent.js --demo",
-    "agent:check": "node agent.js --check",
-    "agent:pay": "node agent.js --pay"
+    "dev": "concurrently -k -n api,web \"npm run dev --workspace @aeropay/server\" \"npm run dev --workspace @aeropay/web\"",
+    "build": "npm run build --workspace @aeropay/web",
+    "start": "npm run build --workspace @aeropay/web && npm run start --workspace @aeropay/server",
+    "agent:demo": "npm run demo --workspace @aeropay/agent",
+    "agent:check": "npm run check --workspace @aeropay/agent",
+    "agent:pay": "npm run pay --workspace @aeropay/agent"
   },
-  "engines": { "node": ">=22.23.4" }
+  "devDependencies": {
+    "concurrently": "9.2.5"
+  },
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
+  }
 }
