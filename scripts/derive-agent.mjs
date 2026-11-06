@@ -29,11 +29,13 @@ const phrase = (lines[0] || '').trim().toLowerCase().split(/\s+/).join(' ');
 const want = (lines[1] || '').trim();
 const seed = pbkdf2Sync(phrase.normalize('NFKD'), 'mnemonic', 2048, 64, 'sha512');
 console.log('\nWallet (owner):', derive(seed, [44, 148, 0]).publicKey());
-for (let i = 0; i < 64; i++) {
+for (let i = 1; i <= 64; i++) {
   const kp = derive(seed, [44, 148, 0, i]);
   if (kp.publicKey() === want) {
     console.log(`\nFOUND agent at index ${i}\nAGENT_SECRET=${kp.secret()}`);
     process.exit(0);
   }
 }
-console.log('\nAgent address not found in this phrase (indexes 0-63). Check the phrase and the address.');
+console.log('\nFirst agent addresses from this phrase (compare with the extension):');
+for (let i = 1; i <= 5; i++) console.log(`  #${i}`, derive(seed, [44, 148, 0, i]).publicKey());
+console.log('\nAgent address not found in this phrase (indexes 1-64). Check the phrase and the address.');
