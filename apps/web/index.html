@@ -69,8 +69,8 @@
               <input id="place-query" name="place" type="search" placeholder="Search a city, address, or landmark" autocomplete="off" required>
               <button id="place-search-button" type="submit">Search</button>
             </form>
-            <p class="map-status" id="map-status" aria-live="polite">Select Pickup, then search or click on the map.</p>
-            <div id="route-map" role="application" aria-label="Interactive map. Click to set the selected route point.">
+            <p class="map-status" id="map-status" role="status" aria-live="polite">Select Pickup, then search or click on the map.</p>
+            <div id="route-map" role="region" aria-label="Route map. Use the map controls to navigate, then click to set the selected route point.">
               <div class="map-loading" id="map-loading">Loading map…</div>
             </div>
             <div class="map-credit"><span>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a></span><span>Manual search · max 1 request/sec · <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noreferrer">search policy</a></span></div>
@@ -112,7 +112,7 @@
           <div class="live-payment-box">
             <div class="live-payment-heading"><span>SHIPMENT BOOKING · VELO TESTNET</span><span class="live-pill" id="velo-pill">CHECKING</span></div>
             <button id="velo-checkout-button" class="velo-checkout-button" type="button">Create Velo booking checkout</button>
-            <p class="integration-note" id="velo-status" aria-live="polite">Checking Velo Testnet setup…</p>
+            <p class="integration-note" id="velo-status" role="status" aria-live="polite">Checking Velo Testnet setup…</p>
           </div>
           <button id="settle-button" class="settle-button" type="button"><span id="settle-label">Run delivery agent</span><span aria-hidden="true">↗</span></button>
           <p class="demo-disclaimer" id="button-note">The agent decides from sample evidence; only successful Testnet authorization submits a transaction.</p>
@@ -141,7 +141,13 @@
       </div>
     </section>
 
-    <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a><p>Prototype for conditional agent payments.</p><span class="footer-note">SAMPLE DATA · NO REAL FUNDS</span></footer>
+    <section class="demo-notice" id="demo-notice" aria-labelledby="demo-notice-title">
+      <h2 id="demo-notice-title">Demo, data & accessibility</h2>
+      <p><strong>Prototype only:</strong> delivery readings and locations are sample inputs, not verified sensor or GPS evidence. Payments use Stellar Testnet tokens, which have no real-world value. Do not enter personal or sensitive addresses.</p>
+      <p><strong>External services:</strong> map tiles and place searches are provided by OpenStreetMap. When you search, your query is sent to its Nominatim service; opening the map also requests map tiles. The demo stores a temporary shipment ID in this browser session and sends delivery scenario inputs to the AeroPay server. Velo checkout opens separately when selected.</p>
+      <p>No refund or production payment policy applies to this prototype. No analytics or advertising tracker is included in the demo page. You can use the main controls by keyboard; visible focus indicates the current control.</p>
+    </section>
+    <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a><p>Prototype for conditional agent payments.</p><a href="#demo-notice">Demo, data & accessibility</a><span class="footer-note">SAMPLE DATA · TESTNET ONLY</span></footer>
   </main>
 </body>
 </html>

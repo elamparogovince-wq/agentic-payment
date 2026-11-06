@@ -28,3 +28,12 @@
 .transaction-link{display:inline-block;margin:13px 0 2px;color:#246c46;font-size:11px;font-weight:600;text-decoration:none}.transaction-link:hover{text-decoration:underline}
 .transaction-link[hidden]{display:none}
 .preview-dialog .dialog-description{white-space:pre-line}.preview-dialog .dialog-check{transition:background .2s,color .2s}.preview-dialog .dialog-check.wait{background:#fff2d9;color:#8a641f}.preview-dialog .dialog-check.bad{background:#fbe7e4;color:#a8493d}.preview-dialog .dialog-check.good{background:#e7f4eb;color:#28794c}
+
+/* Clear keyboard focus and a readable prototype disclosure. */
+:where(a,button,input,[tabindex]):focus-visible{outline:3px solid #1769aa;outline-offset:3px}
+.demo-notice{margin:30px 0 0;padding:20px 22px;border:1px solid var(--line);border-radius:15px;background:#f8f8f6;color:#343438}
+.demo-notice h2{margin:0 0 10px;font-size:17px;letter-spacing:-.3px}
+.demo-notice p{max-width:900px;margin:8px 0 0;color:#55555b;font-size:11px;line-height:1.65}
+.demo-notice strong{color:#26262a}
+.site-footer>a:not(.brand){font-size:10px;color:#515154;text-underline-offset:3px}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
