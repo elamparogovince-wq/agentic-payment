@@ -2,11 +2,11 @@
 
 One-line pitch: A delivery agent releases a cold-chain carrier payout through Noir only when delivery evidence and the owner's Testnet policy pass; Velo confirms the shipper's booking payment.
 
-**Live website:** [Add the deployed public URL before submission]
+**Live website:** https://aeropay-agentic-payment.onrender.com
 
 **Demo video (2 min):** [Add the two-minute end-to-end demo link before submission]
 
-**Team:** [Name] ([Discord handle])
+**Team:** [Byte Me Daddy] ([Discord handle])
 
 ## Problem
 
