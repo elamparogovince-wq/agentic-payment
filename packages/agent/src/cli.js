@@ -1,4 +1,9 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Load the repo-root .env, same as the server, no matter where npm runs this from.
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
 import { runDeliveryAgent, runOfflineScenario } from './index.js';
 
 const command = process.argv[2] || '--demo';
