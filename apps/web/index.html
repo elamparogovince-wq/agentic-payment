@@ -3,9 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f4ed">
+  <meta name="theme-color" content="#f7f8f4">
   <meta name="description" content="AeroPay lets delivery agents earn within rules set by the cargo owner.">
   <title>AeroPay — payments with conditions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="/styles.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
@@ -21,39 +24,43 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="eyebrow-mark"></span> CONDITIONAL PAYMENTS FOR DELIVERY AGENTS</p>
-        <h1>Good delivery.<br><span>Fair payment.</span></h1>
+        <p class="hero-kicker">Conditional payments for delivery agents</p>
+        <h1><span class="h1-line">Good delivery.</span><span class="h1-line accent">Fair payment.</span></h1>
         <p class="hero-description">AeroPay lets a delivery agent earn when the agreed conditions are met. If the cargo warms up or the amount is too high, the payment stays locked.</p>
-        <a class="hero-link" href="#mission">See how it works <span aria-hidden="true">↓</span></a>
+        <div class="hero-actions">
+          <a class="button-primary" href="#mission">Try the simulator</a>
+          <a class="text-link" href="#trail">See the decision log</a>
+        </div>
       </div>
       <aside class="hero-note" aria-label="Prototype details">
-        <div class="note-top"><span class="note-label">A DELIVERY, UNDER RULES</span><span class="sample-chip">SAMPLE</span></div>
-        <div class="note-route"><span class="route-origin">P</span><span class="route-stem"><i></i></span><span class="route-destination">M</span></div>
+        <div class="note-head"><span class="note-title">A delivery, under rules</span><span class="sample-chip">Sample</span></div>
+        <div class="note-route" aria-hidden="true"><span class="route-origin">P</span><span class="route-stem"><i></i></span><span class="route-destination">D</span></div>
         <div class="note-cities"><span id="origin-summary">Pasig cold store</span><span id="destination-summary">PGH · Ermita</span></div>
-        <div class="note-divider"></div>
-        <div class="note-bottom"><span>Cold-chain limit</span><strong>2°–8°C</strong></div>
-        <div class="note-bottom"><span>Agent payment cap</span><strong>₱10,000</strong></div>
-        <div class="note-bottom"><span>Sample escrow</span><strong>₱48,000</strong></div>
+        <dl class="note-facts">
+          <div><dt>Cold-chain limit</dt><dd>2°–8°C</dd></div>
+          <div><dt>Agent payment cap</dt><dd>₱10,000</dd></div>
+          <div><dt>Sample escrow</dt><dd>₱48,000</dd></div>
+        </dl>
       </aside>
     </section>
 
     <section class="demo-section" id="mission">
       <div class="section-heading">
-        <div><p class="eyebrow section-eyebrow">THE DELIVERY SIMULATOR</p><h2>One delivery. Three outcomes.</h2></div>
+        <h2>One delivery. Three outcomes.</h2>
         <p class="section-intro">Choose a scenario. The agent checks the evidence against the owner’s example policy.</p>
       </div>
 
       <div class="demo-grid">
         <article class="mission-card">
           <div class="card-heading">
-            <div><span class="card-kicker">COLD-CHAIN DELIVERY</span><h3>Medical supplies <span class="batch">CC-2048</span></h3></div>
-            <span class="demo-tag"><i></i> SIMULATED</span>
+            <div><span class="card-kicker">Cold-chain delivery</span><h3>Medical supplies <span class="batch">CC-2048</span></h3></div>
+            <span class="demo-tag"><i></i> Simulated</span>
           </div>
 
           <div class="shipment-route">
-            <div class="route-place"><span class="place-marker origin-marker">P</span><div><small>PICKUP</small><strong id="pickup-label">Pasig cold store</strong></div></div>
-            <div class="route-connector"><span></span><small id="route-distance">Choose both points</small></div>
-            <div class="route-place"><span class="place-marker destination-marker">D</span><div><small>DELIVERY</small><strong id="delivery-label">Philippine General Hospital</strong></div></div>
+            <div class="route-place"><span class="place-marker origin-marker">P</span><div><small>Pickup</small><strong id="pickup-label">Pasig cold store</strong></div></div>
+            <div class="route-connector"><small id="route-distance">Choose both points</small><span></span></div>
+            <div class="route-place"><span class="place-marker destination-marker">D</span><div><small>Delivery</small><strong id="delivery-label">Philippine General Hospital</strong></div></div>
           </div>
 
           <div class="map-picker">
@@ -77,7 +84,7 @@
             <div class="place-results" id="place-results" aria-live="polite"></div>
           </div>
 
-          <div class="evidence-heading"><span>DELIVERY EVIDENCE</span><span>Example readings</span></div>
+          <div class="evidence-heading"><span>Delivery evidence</span><span>Example readings</span></div>
           <div class="evidence-grid">
             <div class="evidence-card"><div class="evidence-icon temperature-icon" aria-hidden="true">°</div><div class="evidence-copy"><span>Temperature</span><small>Allowed: 2°–8°C</small></div><strong class="evidence-value" id="temperature">5.2<span>°C</span></strong><div class="temperature-track"><i id="temp-bar"></i></div></div>
             <div class="evidence-card"><div class="evidence-icon location-icon" aria-hidden="true">↗</div><div class="evidence-copy"><span>Destination</span><small id="geofence-label">PGH, Ermita · sample geofence</small></div><strong class="location-value" id="checkpoint">Reached <b>✓</b></strong></div>
@@ -94,7 +101,7 @@
         </article>
 
         <article class="decision-card" id="policy">
-          <div class="decision-header"><div><span class="card-kicker">AGENT POLICY</span><h3>Payment decision</h3></div><span class="policy-mark" aria-hidden="true">A</span></div>
+          <div class="decision-header"><div><span class="card-kicker">Agent policy</span><h3>Payment decision</h3></div><span class="policy-mark" aria-hidden="true">A</span></div>
           <div class="decision-box allow" id="decision-box" aria-live="polite">
             <span class="decision-icon" id="decision-icon" aria-hidden="true">✓</span>
             <div class="decision-message"><strong id="decision-title">Conditions met</strong><p id="decision-copy">The request fits the example policy.</p></div>
@@ -108,19 +115,19 @@
             <div class="policy-row"><span class="check-mark good">✓</span><div><strong>Agent is authorized</strong><small>Example owner policy</small></div><span class="check-result good">PASS</span></div>
           </div>
 
-          <div class="payment-summary"><div><span>ROUTE ESTIMATE</span><strong id="payout-amount">₱180</strong></div><div><span>DELIVERY RECIPIENT</span><strong id="recipient-label">Philippine General Hospital</strong></div><p class="price-note">Illustrative PHP quote only. Velo checkout uses a separate Testnet asset amount.</p></div>
+          <div class="payment-summary"><div><span>Route estimate</span><strong id="payout-amount">₱180</strong></div><div><span>Delivery recipient</span><strong id="recipient-label">Philippine General Hospital</strong></div><p class="price-note">Illustrative PHP quote only. Velo checkout uses a separate Testnet asset amount.</p></div>
           <div class="live-payment-box">
-            <div class="live-payment-heading"><span>SHIPMENT BOOKING · VELO TESTNET</span><span class="live-pill" id="velo-pill">CHECKING</span></div>
+            <div class="live-payment-heading"><span>Shipment booking · Velo Testnet</span><span class="live-pill" id="velo-pill">CHECKING</span></div>
             <button id="velo-checkout-button" class="velo-checkout-button" type="button">Create Velo booking checkout</button>
             <p class="integration-note" id="velo-status" role="status" aria-live="polite">Checking Velo Testnet setup…</p>
           </div>
-          <button id="settle-button" class="settle-button" type="button"><span id="settle-label">Run delivery agent</span><span aria-hidden="true">↗</span></button>
+          <button id="settle-button" class="settle-button" type="button"><span id="settle-label">Run delivery agent</span></button>
           <p class="demo-disclaimer" id="button-note">The agent decides from sample evidence; only successful Testnet authorization submits a transaction.</p>
         </article>
       </div>
       <dialog class="preview-dialog" id="payment-dialog" aria-labelledby="dialog-title">
         <div class="dialog-check" id="agent-result-icon" aria-hidden="true">A</div>
-        <p class="dialog-kicker">AGENT DECISION · STELLAR TESTNET</p>
+        <p class="dialog-kicker">Agent decision · Stellar Testnet</p>
         <h2 id="dialog-title">The agent is checking delivery.</h2>
         <p class="dialog-description" id="agent-result-copy" aria-live="polite">The server checks the sample evidence and the Noir policy before it can authorize any payout.</p>
         <div class="dialog-detail"><span>Velo booking</span><strong id="dialog-booking-status">Not started</strong></div>
@@ -132,7 +139,7 @@
     </section>
 
     <section class="log-section" id="trail">
-      <div class="log-heading"><div><p class="eyebrow section-eyebrow">WHY THE AGENT DECIDED</p><h2>Decision log</h2></div><span class="log-count" id="trail-count">4 steps</span></div>
+      <div class="log-heading"><div><h2>Decision log</h2><p class="log-intro">Why the agent decided what it did.</p></div><span class="log-count" id="trail-count">4 steps</span></div>
       <div class="timeline" id="timeline">
         <div class="event"><span class="event-icon" aria-hidden="true">01</span><div><b>Reading received</b><small>Cold-chain tag · 5.2°C · sample data</small></div><span class="event-state">IN RANGE</span></div>
         <div class="event"><span class="event-icon" aria-hidden="true">02</span><div><b>Destination reached</b><small>PGH, Ermita geofence · sample data</small></div><span class="event-state">REACHED</span></div>
@@ -147,7 +154,7 @@
       <p><strong>External services:</strong> map tiles and place searches are provided by OpenStreetMap. When you search, your query is sent to its Nominatim service; opening the map also requests map tiles. The demo stores a temporary shipment ID in this browser session and sends delivery scenario inputs to the AeroPay server. Velo checkout opens separately when selected.</p>
       <p>No refund or production payment policy applies to this prototype. No analytics or advertising tracker is included in the demo page. You can use the main controls by keyboard; visible focus indicates the current control.</p>
     </section>
-    <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a><p>Prototype for conditional agent payments.</p><a href="#demo-notice">Demo, data & accessibility</a><span class="footer-note">SAMPLE DATA · TESTNET ONLY</span></footer>
+    <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a><p>Prototype for conditional agent payments.</p><a href="#demo-notice">Demo, data & accessibility</a><span class="footer-note">Sample data · Testnet only</span></footer>
   </main>
 </body>
 </html>
