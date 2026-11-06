@@ -6,7 +6,7 @@ One-line pitch: A delivery agent releases a cold-chain carrier payout through No
 
 **Demo video (2 min):** [Add the two-minute end-to-end demo link before submission]
 
-**Team:** [Byte Me Daddy] ([Discord handle])
+**Team:** Byte Me Daddy 
 
 ## Problem
 
