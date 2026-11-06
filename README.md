@@ -59,9 +59,9 @@ This is a single-process hackathon prototype. Checkout mappings, recent webhook 
 
 ## Testnet proof
 
-No live transaction has been recorded in this repository yet. Add at least one Stellar Expert link to a demo transaction before submitting:
+Noir carrier payout authorized on Stellar Testnet (2.00 XLM from card escrow, agent-signed after the delivery evidence and owner policy passed):
 
-- Noir carrier payout: [Add Stellar Expert Testnet transaction link]
+- Noir carrier payout: [d886db71…9876](https://stellar.expert/explorer/testnet/tx/d886db719ef3c7eaa165b26644e5c7bf820f50b256e63dceee4bc3dad6269876)
 - Velo booking payment: [Add Stellar Expert Testnet transaction link]
 
 ## Repo structure
