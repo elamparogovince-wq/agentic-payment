@@ -6,7 +6,7 @@ One-line pitch: A delivery agent releases a cold-chain carrier payout through No
 
 **Pitch deck:** https://www.canva.com/d/vqv4hZEAL2UbFoB
 
-**Demo video (2 min):** [Add the two-minute end-to-end demo link before submission]
+**Demo video (2 min):** https://drive.google.com/file/d/18O6IElQNyncYYD1xLiOM6k-XQuArzwm4/view?usp=sharing
 
 **Team:** Byte Me Daddy 
 
