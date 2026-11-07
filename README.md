@@ -117,7 +117,21 @@ After the first deploy, add the Velo and Noir values from your local `.env` to t
 
 ## Screenshots
 
-Add current screenshots of the public app, the Velo checkout/status, and both Noir allow/refuse outcomes before submission.
+**Home.** Route, cold-chain limit and agent payment cap.
+
+![AeroPay home](docs/home.png)
+
+**Velo booking paid.** The shipper's Testnet booking checkout is confirmed on Stellar.
+
+![Velo checkout completed](docs/velo-paid.png)
+
+**Agent run.** With the Velo booking confirmed, the agent checks the evidence and the Noir policy before paying 2.00 XLM.
+
+![Agent checking delivery](docs/agent-checking.png)
+
+**Payment refused.** A temperature breach (10.4°C, outside 2°–8°C) blocks the payout and the escrow stays locked.
+
+![Temperature breach denied](docs/temperature-breach.png)
 
 ## What's next
 
