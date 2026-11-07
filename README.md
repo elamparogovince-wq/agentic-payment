@@ -4,6 +4,8 @@ One-line pitch: A delivery agent releases a cold-chain carrier payout through No
 
 **Live website:** https://aeropay-agentic-payment.onrender.com
 
+**Pitch deck:** https://www.canva.com/d/vqv4hZEAL2UbFoB
+
 **Demo video (2 min):** [Add the two-minute end-to-end demo link before submission]
 
 **Team:** Byte Me Daddy 
@@ -62,7 +64,7 @@ This is a single-process hackathon prototype. Checkout mappings, recent webhook 
 Noir carrier payout authorized on Stellar Testnet (2.00 XLM from card escrow, agent-signed after the delivery evidence and owner policy passed):
 
 - Noir carrier payout: [d886db71…9876](https://stellar.expert/explorer/testnet/tx/d886db719ef3c7eaa165b26644e5c7bf820f50b256e63dceee4bc3dad6269876)
-- Velo booking payment: [Add Stellar Expert Testnet transaction link]
+- Velo booking payment: [6ca6bfbd…132c](https://stellar.expert/explorer/testnet/tx/6ca6bfbde7f2ca3039b3c4c0efde2f52310de54d5da98a1f3764fd882a9f132c) (10.00 XLM Testnet checkout, confirmed by Velo)
 
 ## Repo structure
 
