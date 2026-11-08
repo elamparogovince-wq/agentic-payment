@@ -18,6 +18,27 @@ let selectedScenario = 'success';
 let apiServices = null;
 let veloPollTimer = null;
 
+function shortHash(hash) {
+  return hash.length > 14 ? `${hash.slice(0, 6)}…${hash.slice(-4)}` : hash;
+}
+
+document.addEventListener('keydown', (event) => {
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-copy]')) {
+    event.preventDefault();
+    event.target.click();
+  }
+});
+
+document.addEventListener('click', async (event) => {
+  const chip = event.target.closest('[data-copy]');
+  if (!chip) return;
+  try {
+    await navigator.clipboard.writeText(chip.dataset.copy);
+    chip.classList.add('copied');
+    setTimeout(() => chip.classList.remove('copied'), 1200);
+  } catch { /* clipboard unavailable: hash stays selectable */ }
+});
+
 function currentShipmentId() {
   let id = sessionStorage.getItem('aeropay.shipmentId');
   if (!id) {
@@ -27,7 +48,27 @@ function currentShipmentId() {
   return id;
 }
 
+const STEP_LABELS = { done: 'Done', active: 'Active', waiting: 'Waiting', blocked: 'Blocked', pending: 'Pending' };
+const stepState = { booking: 'active', velo: 'waiting', agent: 'waiting', noir: 'waiting', claim: 'waiting' };
+const stepNotes = { booking: 'Waiting for booking', velo: 'Waiting for ledger confirmation', agent: 'Ready for the agent', noir: 'Noir payout in progress', claim: 'Payout authorized. Merchant can claim.', blocked: 'Payout blocked. Escrow stays locked.' };
+
+function setSteps(next, note) {
+  Object.assign(stepState, next);
+  document.querySelectorAll('#stepper li').forEach((li) => {
+    const state = stepState[li.dataset.step] || 'waiting';
+    li.classList.remove('done', 'active', 'blocked', 'pending');
+    if (state !== 'waiting') li.classList.add(state);
+    li.querySelector('.step-state').textContent = STEP_LABELS[state];
+    if (state === 'active') li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+  });
+  const noteEl = document.getElementById('stepper-note');
+  if (noteEl && note) noteEl.textContent = note;
+}
+
 function setVeloStatus(message, tone = '') {
+  if (tone === 'good') setSteps({ booking: 'done', velo: 'done', agent: stepState.agent === 'waiting' ? 'active' : stepState.agent }, stepNotes.agent);
+  else if (tone === 'wait') setSteps({ booking: 'done', velo: 'active' }, stepNotes.velo);
+  else if (tone === 'bad') setSteps({ velo: stepState.velo === 'done' ? 'done' : 'waiting' }, message);
   const note = $('velo-status');
   const pill = $('velo-pill');
   note.textContent = message;
@@ -66,7 +107,18 @@ async function loadServiceStatus() {
   }
 }
 
+function stepsForDecision(decision) {
+  if (decision === 'authorized') return [{ booking: 'done', velo: 'done', agent: 'done', noir: 'done', claim: 'pending' }, stepNotes.claim];
+  if (decision === 'approved') return [{ agent: 'done', noir: 'waiting', claim: 'waiting' }, 'Policy passed. No payment was sent.'];
+  if (decision === 'denied') return [{ agent: 'done', noir: 'blocked', claim: 'waiting' }, stepNotes.blocked];
+  if (decision === 'waiting_for_velo') return [{ velo: 'active', agent: 'waiting', noir: 'waiting', claim: 'waiting' }, stepNotes.velo];
+  if (decision === 'unknown') return [{ agent: 'done', noir: 'blocked', claim: 'waiting' }, 'Check Stellar Testnet before retrying'];
+  return [{ agent: 'blocked' }, 'The agent needs setup'];
+}
+
 function showAgentResult(result) {
+  const [stepNext, stepNote] = stepsForDecision(result.decision);
+  setSteps(stepNext, stepNote);
   const icon = $('agent-result-icon');
   const title = $('dialog-title');
   const copy = $('agent-result-copy');
@@ -88,7 +140,7 @@ function showAgentResult(result) {
   if (result.transactionHash) {
     link.href = `https://stellar.expert/explorer/testnet/tx/${encodeURIComponent(result.transactionHash)}`;
     link.hidden = false;
-    link.textContent = `View Testnet transaction ${result.transactionHash.slice(0, 12)}… ↗`;
+    link.textContent = `View Testnet transaction ${shortHash(result.transactionHash)} ↗`;
   } else {
     link.hidden = true;
     link.removeAttribute('href');
@@ -104,12 +156,22 @@ function showAgentResult(result) {
           : result.decision === 'unknown'
             ? 'Check Testnet before retrying'
             : 'Agent decision recorded';
-    lastEvent.querySelector('small').textContent = result.transactionHash
-      ? `Stellar Testnet · ${result.transactionHash}`
-      : result.reason || 'No transaction was submitted.';
+    const lastSmall = lastEvent.querySelector('small');
+    if (result.transactionHash) {
+      lastSmall.textContent = 'Stellar Testnet · ';
+      const chip = document.createElement('code');
+      chip.className = 'hash';
+      chip.dataset.copy = result.transactionHash;
+      chip.title = 'Click to copy full hash';
+      chip.textContent = shortHash(result.transactionHash);
+      lastSmall.append(chip);
+    } else {
+      lastSmall.textContent = result.reason || 'No transaction was submitted.';
+    }
     const state = lastEvent.querySelector('.event-state');
     state.textContent = result.decision.toUpperCase().replaceAll('_', ' ');
     state.classList.toggle('pending', result.decision === 'waiting_for_velo' || result.decision === 'needs_setup');
+    state.classList.toggle('bad', result.decision === 'denied');
   }
 }
 
@@ -407,9 +469,9 @@ function showScenario(key) {
     ? 'The agent decides. A live Noir payout requires a Velo-confirmed booking and an active Testnet policy.'
     : 'Run the agent to see why the request is refused. No payout is sent for a failed check.';
   timeline.innerHTML = `
-    <div class="event"><span class="event-icon">01</span><div><b>Reading received</b><small>Cold-chain tag · ${scenario.temp.toFixed(1)}°C · sample data</small></div><span class="event-state">${tempOk ? 'IN RANGE' : 'BREACH'}</span></div>
+    <div class="event"><span class="event-icon">01</span><div><b>Reading received</b><small>Cold-chain tag · ${scenario.temp.toFixed(1)}°C · sample data</small></div><span class="event-state${tempOk ? '' : ' bad'}">${tempOk ? 'IN RANGE' : 'BREACH'}</span></div>
     <div class="event"><span class="event-icon">02</span><div><b>Destination reached</b><small>${points.delivery.label} · sample location</small></div><span class="event-state">REACHED</span></div>
-    <div class="event"><span class="event-icon">03</span><div><b>Policy checked</b><small>${capOk ? `${formatPHP(amount)} is within the ₱10,000 cap` : `${formatPHP(amount)} exceeds the ₱10,000 cap`}</small></div><span class="event-state">${allowed ? 'ALLOW' : 'DENY'}</span></div>
+    <div class="event"><span class="event-icon">03</span><div><b>Policy checked</b><small>${capOk ? `${formatPHP(amount)} is within the ₱10,000 cap` : `${formatPHP(amount)} exceeds the ₱10,000 cap`}</small></div><span class="event-state${allowed ? '' : ' bad'}">${allowed ? 'ALLOW' : 'DENY'}</span></div>
     <div class="event last"><span class="event-icon">04</span><div><b>Waiting for agent decision</b><small>${allowed ? 'The agent will check Velo booking and Noir policy' : 'No payout will be sent unless every check passes'}</small></div><span class="event-state pending">READY</span></div>`;
   $('trail-count').textContent = '4 steps';
   document.querySelectorAll('.scenario-btn').forEach((button) => {

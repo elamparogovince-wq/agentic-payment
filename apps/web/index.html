@@ -6,6 +6,14 @@
   <meta name="theme-color" content="#f7f8f4">
   <meta name="description" content="AeroPay lets delivery agents earn within rules set by the cargo owner.">
   <title>AeroPay — payments with conditions</title>
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('aeropay.theme'); } catch (e) {}
+      if (!t && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
+      document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
@@ -17,7 +25,11 @@
 <body>
   <header class="site-header" id="home">
     <a class="brand" href="#home" aria-label="AeroPay home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a>
-    <nav aria-label="Main navigation"><a href="#mission">Try the demo</a><a href="#trail">Decision log</a></nav>
+    <nav aria-label="Main navigation"><a href="#mission">Try the demo</a><a href="#proof">Testnet proof</a><a href="#trail">Decision log</a></nav>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
     <div class="header-status" id="service-status"><span class="status-dot"></span> Connecting to Testnet services…</div>
   </header>
 
@@ -116,6 +128,16 @@
           </div>
 
           <div class="payment-summary"><div><span>Route estimate</span><strong id="payout-amount">₱180</strong></div><div><span>Delivery recipient</span><strong id="recipient-label">Philippine General Hospital</strong></div><p class="price-note">Illustrative PHP quote only. Velo checkout uses a separate Testnet asset amount.</p></div>
+          <div class="stepper-wrap">
+            <div class="stepper-head"><strong>Settlement</strong><span id="stepper-note">Waiting for booking</span></div>
+            <ol class="stepper" id="stepper" aria-label="Settlement progress">
+              <li data-step="booking" class="active"><span class="dot" aria-hidden="true"></span><div><b>Booking fee</b><small>Shipper pays through Velo</small></div><span class="step-state">Active</span></li>
+              <li data-step="velo"><span class="dot" aria-hidden="true"></span><div><b>Velo confirmed</b><small>Stellar ledger confirms the payment</small></div><span class="step-state">Waiting</span></li>
+              <li data-step="agent"><span class="dot" aria-hidden="true"></span><div><b>Agent check</b><small>Policy, escrow and evidence</small></div><span class="step-state">Waiting</span></li>
+              <li data-step="noir"><span class="dot" aria-hidden="true"></span><div><b>Noir payout</b><small>Agent authorizes the carrier payment</small></div><span class="step-state">Waiting</span></li>
+              <li data-step="claim"><span class="dot" aria-hidden="true"></span><div><b>Merchant claim</b><small>Carrier claims the pending balance</small></div><span class="step-state">Waiting</span></li>
+            </ol>
+          </div>
           <div class="live-payment-box">
             <div class="live-payment-heading"><span>Shipment booking · Velo Testnet</span><span class="live-pill" id="velo-pill">CHECKING</span></div>
             <button id="velo-checkout-button" class="velo-checkout-button" type="button">Create Velo booking checkout</button>
@@ -138,6 +160,25 @@
       </dialog>
     </section>
 
+    <section class="proof-section" id="proof" aria-labelledby="proof-title">
+      <div class="proof-heading"><div><h2 id="proof-title">Real Testnet proof</h2><p class="log-intro">Two transactions that ran on Stellar Testnet. Open them on Stellar Expert to verify.</p></div><span class="proof-chip">Testnet · no real money</span></div>
+      <div class="proof-table" role="table" aria-label="Testnet transactions">
+        <div class="proof-row proof-head" role="row"><span role="columnheader">Step</span><span role="columnheader">Amount</span><span role="columnheader">Transaction</span><span role="columnheader"></span></div>
+        <div class="proof-row" role="row">
+          <div role="cell"><b>Carrier payout</b><small>Noir · agent authorizePayment</small></div>
+          <span class="proof-amount" role="cell">2.00 XLM</span>
+          <span role="cell"><code class="hash" data-copy="d886db719ef3c7eaa165b26644e5c7bf820f50b256e63dceee4bc3dad6269876" tabindex="0" role="button" title="Click to copy full hash" aria-label="Copy Noir transaction hash">d886db…9876</code></span>
+          <a class="proof-link" role="cell" href="https://stellar.expert/explorer/testnet/tx/d886db719ef3c7eaa165b26644e5c7bf820f50b256e63dceee4bc3dad6269876" target="_blank" rel="noreferrer">Stellar Expert ↗</a>
+        </div>
+        <div class="proof-row" role="row">
+          <div role="cell"><b>Booking fee</b><small>Velo · checkout confirmed</small></div>
+          <span class="proof-amount" role="cell">10.00 XLM</span>
+          <span role="cell"><code class="hash" data-copy="6ca6bfbde7f2ca3039b3c4c0efde2f52310de54d5da98a1f3764fd882a9f132c" tabindex="0" role="button" title="Click to copy full hash" aria-label="Copy Velo transaction hash">6ca6bf…132c</code></span>
+          <a class="proof-link" role="cell" href="https://stellar.expert/explorer/testnet/tx/6ca6bfbde7f2ca3039b3c4c0efde2f52310de54d5da98a1f3764fd882a9f132c" target="_blank" rel="noreferrer">Stellar Expert ↗</a>
+        </div>
+      </div>
+    </section>
+
     <section class="log-section" id="trail">
       <div class="log-heading"><div><h2>Decision log</h2><p class="log-intro">Why the agent decided what it did.</p></div><span class="log-count" id="trail-count">4 steps</span></div>
       <div class="timeline" id="timeline">
@@ -156,5 +197,24 @@
     </section>
     <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span>AeroPay</span></a><p>Prototype for conditional agent payments.</p><a href="#demo-notice">Demo, data & accessibility</a><span class="footer-note">Sample data · Testnet only</span></footer>
   </main>
+  <script>
+    (function () {
+      var btn = document.getElementById('theme-toggle'), root = document.documentElement;
+      var meta = document.querySelector('meta[name="theme-color"]');
+      function sync() {
+        var dark = root.getAttribute('data-theme') === 'dark';
+        btn.setAttribute('aria-pressed', String(dark));
+        btn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+        if (meta) meta.setAttribute('content', dark ? '#0e1114' : '#f7f8f4');
+      }
+      btn.addEventListener('click', function () {
+        var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        try { localStorage.setItem('aeropay.theme', next); } catch (e) {}
+        sync();
+      });
+      sync();
+    })();
+  </script>
 </body>
 </html>
