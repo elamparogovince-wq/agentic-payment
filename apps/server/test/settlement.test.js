@@ -6,8 +6,18 @@ import { createSettlement } from '../src/settlement.js';
 
 const DEVICE_HASH = 'a'.repeat(64);
 
-function setup({ veloStatus = 'pending', agent } = {}) {
-  const store = openStore(':memory:');
+async function openTestStore() {
+  if (!process.env.TEST_DATABASE_URL) return openStore(':memory:');
+  const store = await openStore({ databaseUrl: process.env.TEST_DATABASE_URL });
+  const pg = await import('pg');
+  const pool = new pg.default.Pool({ connectionString: process.env.TEST_DATABASE_URL });
+  await pool.query('TRUNCATE checkouts, readings, runs, events, webhook_deliveries RESTART IDENTITY');
+  await pool.end();
+  return store;
+}
+
+async function setup({ veloStatus = 'pending', agent } = {}) {
+  const store = await openTestStore();
   const device = createSimulatedDevice({ deviceHash: DEVICE_HASH, seed: 'test-seed' });
   const registry = createDeviceRegistry();
   registry.register(DEVICE_HASH, device.publicKeyHex);
@@ -24,12 +34,12 @@ function setup({ veloStatus = 'pending', agent } = {}) {
     timeoutMs: 2000,
   });
   const send = (over = {}) => settlement.ingestReading({ ...device.signReading({ shipmentId: 'shp_1', temperatureC: 5.2, checkpointMatched: true, ...over.reading }), ...over.raw });
-  const bookVelo = () => store.saveCheckout({ shipmentId: 'shp_1', paymentIntentId: 'pi_test1', checkoutUrl: 'https://example.test', amount: '10.00', asset: 'native' });
+  const bookVelo = async () => store.saveCheckout({ shipmentId: 'shp_1', paymentIntentId: 'pi_test1', checkoutUrl: 'https://example.test', amount: '10.00', asset: 'native' });
   return { store, device, settlement, state, send, bookVelo };
 }
 
 test('a forged or tampered reading is rejected and never reaches the agent', async () => {
-  const { settlement, device, state } = setup();
+  const { settlement, device, state } = await setup();
   const good = device.signReading({ shipmentId: 'shp_1', temperatureC: 5.2, checkpointMatched: true });
   const tampered = await settlement.ingestReading({ ...good, temperatureC: 4.0 });
   assert.equal(tampered.status, 401);
@@ -40,46 +50,46 @@ test('a forged or tampered reading is rejected and never reaches the agent', asy
 });
 
 test('a replayed reading is rejected', async () => {
-  const { settlement, device } = setup();
+  const { settlement, device } = await setup();
   const reading = device.signReading({ shipmentId: 'shp_1', temperatureC: 5.2, checkpointMatched: true });
   assert.equal((await settlement.ingestReading(reading)).status, 202);
   assert.equal((await settlement.ingestReading(reading)).status, 409);
 });
 
 test('a stale reading is rejected', async () => {
-  const { settlement, device } = setup();
+  const { settlement, device } = await setup();
   const old = device.signReading({ shipmentId: 'shp_1', temperatureC: 5.2, checkpointMatched: true, ts: Date.now() - 10 * 60 * 1000 });
   assert.equal((await settlement.ingestReading(old)).status, 422);
 });
 
 test('the agent holds the payout until Velo confirms, then pays on its own', async () => {
-  const { send, bookVelo, settlement, state, store } = setup();
-  bookVelo();
+  const { send, bookVelo, settlement, state, store } = await setup();
+  await bookVelo();
   const first = await send();
   await first.settled;
-  assert.equal(store.getRun('shp_1').state, 'waiting');
+  assert.equal((await store.getRun('shp_1')).state, 'waiting');
   assert.equal(state.agentCalls, 0);
 
   state.veloStatus = 'paid'; // no new reading and no button press: the poller finishes the job
   await settlement.pollWaiting();
-  const run = store.getRun('shp_1');
+  const run = await store.getRun('shp_1');
   assert.equal(run.state, 'authorized');
   assert.equal(state.agentCalls, 1);
-  const types = store.eventsAfter('shp_1').map((e) => e.type);
+  const types = await (await store.eventsAfter('shp_1')).map((e) => e.type);
   assert.deepEqual(types, ['telemetry.accepted', 'agent.waiting', 'velo.confirmed', 'agent.checking', 'agent.authorized']);
 });
 
 test('a temperature breach is denied without needing Velo and never pays', async () => {
-  const { send, store, state } = setup({ agent: async () => ({ decision: 'denied', paymentSubmitted: false, reason: 'breach' }) });
+  const { send, store, state } = await setup({ agent: async () => ({ decision: 'denied', paymentSubmitted: false, reason: 'breach' }) });
   const result = await send({ reading: { temperatureC: 10.4 } });
   await result.settled;
-  assert.equal(store.getRun('shp_1').state, 'denied');
+  assert.equal((await store.getRun('shp_1')).state, 'denied');
   assert.equal(state.agentCalls, 0);
 });
 
 test('a shipment is settled exactly once even when readings keep arriving', async () => {
-  const { send, bookVelo, state } = setup({ veloStatus: 'paid' });
-  bookVelo();
+  const { send, bookVelo, state } = await setup({ veloStatus: 'paid' });
+  await bookVelo();
   const results = await Promise.all([send(), send(), send()]);
   await Promise.all(results.map((r) => r.settled));
   await (await send()).settled;
@@ -87,24 +97,24 @@ test('a shipment is settled exactly once even when readings keep arriving', asyn
 });
 
 test('a Noir failure is recorded as unknown, not retried blindly', async () => {
-  const { send, bookVelo, store } = setup({ veloStatus: 'paid', agent: async () => { throw new Error('network'); } });
-  bookVelo();
+  const { send, bookVelo, store } = await setup({ veloStatus: 'paid', agent: async () => { throw new Error('network'); } });
+  await bookVelo();
   await (await send()).settled;
-  assert.equal(store.getRun('shp_1').state, 'unknown');
+  assert.equal((await store.getRun('shp_1')).state, 'unknown');
 });
 
 test('a restart mid-payment becomes unknown instead of paying twice', async () => {
-  const { store, settlement } = setup();
-  store.claimRun('shp_1');
-  settlement.recoverStale();
-  assert.equal(store.getRun('shp_1').state, 'unknown');
-  assert.equal(store.claimRun('shp_1'), false);
+  const { store, settlement } = await setup();
+  await store.claimRun('shp_1');
+  await settlement.recoverStale();
+  assert.equal((await store.getRun('shp_1')).state, 'unknown');
+  assert.equal(await store.claimRun('shp_1'), false);
 });
 
 test('the merchant claim works once and only after authorization', async () => {
-  const { send, bookVelo, settlement, state } = setup({ veloStatus: 'paid' });
+  const { send, bookVelo, settlement, state } = await setup({ veloStatus: 'paid' });
   assert.equal((await settlement.claim('shp_1')).status, 409);
-  bookVelo();
+  await bookVelo();
   await (await send()).settled;
   const claimed = await settlement.claim('shp_1');
   assert.equal(claimed.status, 200);
@@ -118,12 +128,25 @@ test('state survives reopening the database file', async () => {
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const file = join(mkdtempSync(join(tmpdir(), 'aeropay-')), 'x.db');
-  const a = openStore(file);
-  a.saveCheckout({ shipmentId: 's1', paymentIntentId: 'pi_x1234', checkoutUrl: 'u', amount: '1', asset: 'native' });
-  a.addEvent('s1', 'test', 'hello', { n: 1 });
-  a.close();
-  const b = openStore(file);
-  assert.equal(b.checkoutByShipment('s1').paymentIntentId, 'pi_x1234');
-  assert.equal(b.eventsAfter('s1')[0].data.n, 1);
-  b.close();
+  const a = await openStore(file);
+  await a.saveCheckout({ shipmentId: 's1', paymentIntentId: 'pi_x1234', checkoutUrl: 'u', amount: '1', asset: 'native' });
+  await a.addEvent('s1', 'test', 'hello', { n: 1 });
+  await a.close();
+  const b = await openStore(file);
+  assert.equal((await b.checkoutByShipment('s1')).paymentIntentId, 'pi_x1234');
+  assert.equal((await b.eventsAfter('s1'))[0].data.n, 1);
+  await b.close();
+});
+
+test('postgres: state survives reconnecting', { skip: !process.env.TEST_DATABASE_URL }, async () => {
+  const url = process.env.TEST_DATABASE_URL;
+  const a = await openStore({ databaseUrl: url });
+  await a.saveCheckout({ shipmentId: 'pg1', paymentIntentId: 'pi_pg12345', checkoutUrl: 'u', amount: '1', asset: 'native' });
+  await a.addEvent('pg1', 'test', 'hello', { n: 2 });
+  assert.equal(a.persistent, true);
+  await a.close();
+  const b = await openStore({ databaseUrl: url });
+  assert.equal((await b.checkoutByShipment('pg1')).paymentIntentId, 'pi_pg12345');
+  assert.equal((await b.eventsAfter('pg1'))[0].data.n, 2);
+  await b.close();
 });

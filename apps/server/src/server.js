@@ -26,16 +26,26 @@ app.set('trust proxy', 1);
 const port = Number(process.env.PORT || 4173);
 const webDist = resolve(projectRoot, 'apps/web/dist');
 
-// ---- Storage (SQLite). Falls back to memory if the disk is not writable.
+// ---- Storage: Postgres when DATABASE_URL is set, otherwise SQLite. Falls back so the demo still runs.
 const dataDir = process.env.DATA_DIR?.trim() || resolve(projectRoot, 'data');
 let store;
-let storageMode = 'file';
-try {
-  store = openStore(resolve(dataDir, 'aeropay.db'));
-} catch (error) {
-  console.error('Could not open the SQLite file, using memory only:', error?.message);
-  store = openStore(':memory:');
-  storageMode = 'memory';
+let storageNote = '';
+if (process.env.DATABASE_URL?.trim()) {
+  try {
+    store = await openStore({ databaseUrl: process.env.DATABASE_URL.trim() });
+  } catch (error) {
+    storageNote = 'DATABASE_URL could not be reached; using SQLite instead.';
+    console.error('Postgres connection failed, falling back to SQLite:', error?.message);
+  }
+}
+if (!store) {
+  try {
+    store = await openStore(resolve(dataDir, 'aeropay.db'));
+  } catch (error) {
+    storageNote ||= 'SQLite file is not writable; using memory only.';
+    console.error('Could not open the SQLite file, using memory only:', error?.message);
+    store = await openStore(':memory:');
+  }
 }
 
 // ---- Device registry + simulated tag
@@ -82,7 +92,7 @@ const settlement = createSettlement({
   claimAsMerchant: merchantSecretOk && process.env.MERCHANT_ADDRESS ? claimAsMerchant : null,
   getPendingBalance,
 });
-settlement.recoverStale();
+await settlement.recoverStale();
 setInterval(() => { settlement.pollWaiting().catch((error) => console.error('Agent poll failed:', error?.message)); }, 5000).unref();
 
 // ---- Tiny per-IP rate limit for the device endpoints
@@ -123,7 +133,7 @@ app.get('/api/health', (_request, response) => {
       signing: 'Ed25519 (simulated tag)',
     },
     merchantClaim: { configured: merchantSecretOk, address: process.env.MERCHANT_ADDRESS || null },
-    storage: { mode: storageMode, engine: 'sqlite' },
+    storage: { engine: store.engine, persistent: store.persistent, note: storageNote || null },
     autonomy: 'The agent acts on verified device readings; there is no manual pay button.',
   });
 });
@@ -139,7 +149,7 @@ app.post('/api/velo/checkout', express.json({ limit: '12kb' }), async (request, 
   if (!process.env.VELO_API_KEY?.trim()) {
     return response.status(503).json({ error: 'Add a Testnet VELO_API_KEY to the server .env file.' });
   }
-  const existingCheckout = store.checkoutByShipment(shipmentId);
+  const existingCheckout = await store.checkoutByShipment(shipmentId);
   if (existingCheckout) {
     return response.status(200).json({
       checkoutUrl: existingCheckout.checkoutUrl,
@@ -186,14 +196,14 @@ app.post('/api/velo/checkout', express.json({ limit: '12kb' }), async (request, 
       successUrl: successUrl.toString(),
       cancelUrl: cancelUrl.toString(),
     }, { idempotencyKey });
-    store.saveCheckout({
+    await store.saveCheckout({
       shipmentId,
       paymentIntentId: session.paymentIntentId,
       checkoutUrl: session.checkoutUrl,
       amount,
       asset,
     });
-    store.addEvent(shipmentId, 'velo.checkout', `Velo booking checkout created: ${amount} ${asset} on Testnet.`, { paymentIntentId: session.paymentIntentId });
+    await store.addEvent(shipmentId, 'velo.checkout', `Velo booking checkout created: ${amount} ${asset} on Testnet.`, { paymentIntentId: session.paymentIntentId });
     return response.status(201).json({
       checkoutUrl: session.checkoutUrl,
       paymentIntentId: session.paymentIntentId,
@@ -216,11 +226,11 @@ app.get('/api/velo/payments/:paymentIntentId', async (request, response) => {
   if (!/^pi_[A-Za-z0-9_-]{4,120}$/.test(paymentIntentId)) {
     return response.status(400).json({ error: 'Invalid Velo payment intent ID.' });
   }
-  const checkout = store.checkoutByIntent(paymentIntentId);
+  const checkout = await store.checkoutByIntent(paymentIntentId);
   if (!checkout) return response.status(404).json({ error: 'This server has not created that AeroPay checkout.' });
   try {
     const payment = await getVelo().paymentIntents.retrieve(paymentIntentId);
-    store.setCheckoutStatus(paymentIntentId, payment.status);
+    await store.setCheckoutStatus(paymentIntentId, payment.status);
     return response.json({
       paymentIntentId: payment.id,
       shipmentId: checkout.shipmentId,
@@ -237,11 +247,11 @@ app.get('/api/velo/payments/:paymentIntentId', async (request, response) => {
 });
 
 app.get('/api/velo/shipments/:shipmentId', async (request, response) => {
-  const checkout = store.checkoutByShipment(request.params.shipmentId);
+  const checkout = await store.checkoutByShipment(request.params.shipmentId);
   if (!checkout) return response.status(404).json({ status: 'not_started', shipmentId: request.params.shipmentId });
   try {
     const payment = await getVelo().paymentIntents.retrieve(checkout.paymentIntentId);
-    store.setCheckoutStatus(checkout.paymentIntentId, payment.status);
+    await store.setCheckoutStatus(checkout.paymentIntentId, payment.status);
     if (isVeloPaymentConfirmed(payment.status)) settlement.settle(checkout.shipmentId).catch(() => {});
     return response.json({
       shipmentId: checkout.shipmentId,
@@ -273,12 +283,12 @@ app.post('/api/webhooks/velo', express.raw({ type: 'application/json', limit: '6
       secret,
     });
     const intentId = event.paymentIntent?.id || null;
-    if (store.recordDelivery(deliveryId, event.type, intentId) && intentId) {
-      const checkout = store.checkoutByIntent(intentId);
+    if (await store.recordDelivery(deliveryId, event.type, intentId) && intentId) {
+      const checkout = await store.checkoutByIntent(intentId);
       if (checkout) {
         const status = event.type === 'payment.succeeded' ? 'succeeded' : event.type === 'payment.failed' ? 'failed' : checkout.paymentStatus;
-        store.setCheckoutStatus(intentId, status);
-        store.addEvent(checkout.shipmentId, 'velo.webhook', `Velo webhook received: ${event.type}.`, { type: event.type });
+        await store.setCheckoutStatus(intentId, status);
+        await store.addEvent(checkout.shipmentId, 'velo.webhook', `Velo webhook received: ${event.type}.`, { type: event.type });
         if (status === 'succeeded') settlement.settle(checkout.shipmentId).catch(() => {});
       }
     }
@@ -288,8 +298,8 @@ app.post('/api/webhooks/velo', express.raw({ type: 'application/json', limit: '6
   }
 });
 
-app.get('/api/velo/events', (_request, response) => {
-  response.json({ events: store.recentDeliveries() });
+app.get('/api/velo/events', async (_request, response) => {
+  response.json({ events: await store.recentDeliveries() });
 });
 
 // A verified device reading is what wakes the agent. Anyone can POST here, but only readings
@@ -320,15 +330,15 @@ app.post('/api/demo/device-reading', rateLimit(30), express.json({ limit: '4kb' 
 });
 
 // Live activity feed for one shipment. The page polls this; it also restores state after a reload.
-app.get('/api/shipments/:shipmentId/events', (request, response) => {
+app.get('/api/shipments/:shipmentId/events', async (request, response) => {
   const { shipmentId } = request.params;
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(shipmentId)) return response.status(400).json({ error: 'Invalid shipment ID.' });
   const after = Math.max(0, Number.parseInt(String(request.query.after ?? '0'), 10) || 0);
-  const run = store.getRun(shipmentId);
-  const checkout = store.checkoutByShipment(shipmentId);
+  const run = await store.getRun(shipmentId);
+  const checkout = await store.checkoutByShipment(shipmentId);
   response.json({
     shipmentId,
-    events: store.eventsAfter(shipmentId, after),
+    events: await store.eventsAfter(shipmentId, after),
     run: run ? { state: run.state, result: run.result } : null,
     booking: checkout ? { paymentStatus: checkout.paymentStatus, amount: checkout.amount, asset: checkout.asset } : null,
   });
@@ -351,8 +361,8 @@ app.post('/api/shipments/:shipmentId/claim', rateLimit(10), async (request, resp
   return response.status(result.status).json(result.body);
 });
 
-app.get('/api/agent/shipments/:shipmentId', (request, response) => {
-  const run = store.getRun(request.params.shipmentId);
+app.get('/api/agent/shipments/:shipmentId', async (request, response) => {
+  const run = await store.getRun(request.params.shipmentId);
   if (!run) return response.status(404).json({ error: 'No agent decision is recorded for that shipment.' });
   return response.json({ shipmentId: request.params.shipmentId, state: run.state, ...run.result });
 });

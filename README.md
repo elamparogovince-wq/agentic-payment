@@ -26,7 +26,7 @@ AeroPay pairs a Velo Testnet booking checkout with a rule-based delivery agent. 
 4. A verified reading wakes the agent. There is no manual pay button: the agent runs by itself. It refuses immediately when the temperature is outside 2–8°C or the checkpoint is missing.
 5. For a safe delivery, the agent holds the payout until Velo confirms the booking (a background check runs every 5 seconds, and the Velo webhook wakes it sooner), loads the device policy with the Noir SDK, and calls `checkPayment`.
 6. Only when the Noir policy allows the configured Testnet amount does the agent call `authorizePayment`, which returns a Stellar Testnet transaction hash. The merchant then claims the pending balance with Noir's `claim` (from the page when `MERCHANT_SECRET` is set, or with `npm run merchant:claim`).
-7. Every step is written to a SQLite event log that the page shows as live agent activity. A shipment is settled at most once, and a server restart in the middle of a payment is recorded as unknown instead of paying twice.
+7. Every step is written to a database event log (Postgres when `DATABASE_URL` is set, otherwise SQLite) that the page shows as live agent activity. A shipment is settled at most once, and a server restart in the middle of a payment is recorded as unknown instead of paying twice.
 
 The over-cap scenario asks Noir to check one stroop above the active policy maximum, then displays the refusal. That scenario never calls `authorizePayment`.
 
@@ -39,7 +39,7 @@ flowchart LR
   Server --> Velo[Velo SDK · Testnet checkout/status/webhook]
   Velo --> Ledger[(Stellar Testnet ledger)]
   Tag[Signed tag · Ed25519] --> Server
-  Server --> DB[(SQLite · events, readings, runs)]
+  Server --> DB[(Postgres or SQLite · events, readings, runs)]
   Server --> Agent[packages/agent · autonomous delivery agent]
   Agent --> Noir[Noir SDK · deployed Soroban contracts]
   Noir --> Ledger
@@ -74,7 +74,7 @@ Noir carrier payout authorized on Stellar Testnet (2.00 XLM from card escrow, ag
 ```text
 apps/
   web/                  Vite frontend
-  server/               Express API, signed telemetry, autonomous settlement loop, SQLite store, tests
+  server/               Express API, signed telemetry, autonomous settlement loop, Postgres/SQLite store, tests
 scripts/                derive-agent and device-sim (signed reading sender)
 packages/
   agent/                rule-based agent and Noir SDK calls
@@ -91,7 +91,7 @@ README.md               judging and setup guide
 2. Install the Noir Chrome extension and create/fund the required Stellar Testnet owner, agent, and merchant setup. Configure the deployed Noir policy and escrow.
 3. From the repository root, run `npm install` to install workspace dependencies and create the npm lockfile.
 4. Copy `.env.example` to `.env`; add the Velo Testnet API key and Noir Testnet values on the server. Never commit `.env`.
-5. Run `npm test` to run the 10 server tests (signatures, replay protection, settle-once, restart safety, merchant claim, persistence). Then run `npm run dev`. Open the Vite app at `http://localhost:5173`; the API runs at `http://localhost:4173`.
+5. Run `npm test` to run the server tests (signatures, replay protection, settle-once, restart safety, merchant claim, persistence). Set `TEST_DATABASE_URL` to also run them against a real Postgres. Then run `npm run dev`. Open the Vite app at `http://localhost:5173`; the API runs at `http://localhost:4173`.
 6. For production, set `APP_BASE_URL` to the deployed public HTTPS URL, configure Velo's webhook destination as `https://<your-host>/api/webhooks/velo`, build the web app with `npm run build`, and start the server with `npm run start --workspace @aeropay/server`.
 
 Without credentials, the page displays setup status and the offline CLI remains available. It does not pretend a simulated result is a Testnet payment.
@@ -100,7 +100,7 @@ Without credentials, the page displays setup status and the offline CLI remains 
 
 This repository includes a Render Blueprint for a free Node web service. In Render, create a Blueprint from this repository and select the `aeropay-demo` branch. Render reads `render.yaml`, builds the Vite app, serves it from Express, and checks `/api/health`. Render supplies `RENDER_EXTERNAL_URL`, which the server uses for Velo's return links unless `APP_BASE_URL` is set explicitly.
 
-After the first deploy, add the Velo and Noir values from your local `.env` to the service's Environment settings. Never commit those secrets. Configure the Velo webhook URL as `https://<your-render-host>/api/webhooks/velo`, then redeploy and complete a Testnet rehearsal. Free services can spin down after inactivity; open the site before presenting and allow the first request time to wake it.
+After the first deploy, add the Velo and Noir values from your local `.env` to the service's Environment settings. Never commit those secrets. Configure the Velo webhook URL as `https://<your-render-host>/api/webhooks/velo`, then redeploy and complete a Testnet rehearsal. For data that survives deploys, create a free Postgres (for example on Neon) and set its connection string as `DATABASE_URL`; without it the server uses SQLite on Render's temporary disk. Free services can spin down after inactivity; open the site before presenting and allow the first request time to wake it.
 
 ## Environment variables
 
@@ -120,6 +120,7 @@ After the first deploy, add the Velo and Noir values from your local `.env` to t
 | `PAYMENT_ASSET_LABEL` | Display label for the configured payout asset | For example, `XLM` or `USDC`; display only |
 | `MERCHANT_SECRET` | Optional. Merchant's Testnet secret so the page and `npm run merchant:claim` can claim | The merchant Testnet wallet. Demo only; a real merchant signs with its own wallet |
 | `DEVICE_SIM_SEED` | Seed for the simulated tag's Ed25519 key | Any long random string. Needed for `npm run device:send` |
+| `DATABASE_URL` | Optional Postgres connection string so data survives Render deploys | Create a free Postgres on Neon or Supabase and copy its connection string |
 | `DATA_DIR` | Folder for the SQLite database (default `./data`) | On Render, use a persistent disk or the data resets on deploy |
 
 ## Screenshots
@@ -143,7 +144,6 @@ After the first deploy, add the Velo and Noir values from your local `.env` to t
 ## What's next
 
 - Replace the simulated tag with real signed hardware readings (GPS and temperature) registered in Noir's device registry.
-- Move from SQLite on a single server to a managed database for multi-instance deploys.
 - Let the merchant claim from its own connected wallet instead of a server-held Testnet key.
 - Review and test thoroughly before any move to mainnet.
 

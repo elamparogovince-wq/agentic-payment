@@ -10,6 +10,7 @@
   "dependencies": {
     "@carts1024/velo-sdk": "0.1.0-alpha.4",
     "dotenv": "16.6.1",
-    "express": "5.3.0"
+    "express": "5.3.0",
+    "pg": "^8.23.1"
   }
 }
