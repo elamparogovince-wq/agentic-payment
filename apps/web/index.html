@@ -137,14 +137,23 @@
               <li data-step="noir"><span class="dot" aria-hidden="true"></span><div><b>Noir payout</b><small>Agent authorizes the carrier payment</small></div><span class="step-state">Waiting</span></li>
               <li data-step="claim"><span class="dot" aria-hidden="true"></span><div><b>Merchant claim</b><small>Carrier claims the pending balance</small></div><span class="step-state">Waiting</span></li>
             </ol>
+          <div class="claim-box" id="claim-box" hidden>
+            <div class="claim-row"><div><b>Pending for the merchant</b><small>Noir escrow, after the agent authorized</small></div><span class="claim-amount mono" id="claim-pending">—</span></div>
+            <button id="claim-button" class="velo-checkout-button" type="button" disabled>Claim as merchant</button>
+            <p class="integration-note" id="claim-note"></p>
+          </div>
           </div>
           <div class="live-payment-box">
             <div class="live-payment-heading"><span>Shipment booking · Velo Testnet</span><span class="live-pill" id="velo-pill">CHECKING</span></div>
             <button id="velo-checkout-button" class="velo-checkout-button" type="button">Create Velo booking checkout</button>
             <p class="integration-note" id="velo-status" role="status" aria-live="polite">Checking Velo Testnet setup…</p>
           </div>
-          <button id="settle-button" class="settle-button" type="button"><span id="settle-label">Run delivery agent</span></button>
+          <button id="settle-button" class="settle-button" type="button"><span id="settle-label">Start delivery</span></button>
           <p class="demo-disclaimer" id="button-note">The agent decides from sample evidence; only successful Testnet authorization submits a transaction.</p>
+          <div class="feed-wrap">
+            <div class="stepper-head"><strong>Agent activity</strong><span><span id="feed-count">0 events</span> · <button class="link-button" id="new-shipment" type="button">New shipment</button></span></div>
+            <ol class="agent-feed" id="agent-feed" aria-live="polite" aria-label="Live agent activity"><li class="feed-empty">Nothing yet. Start a delivery and the agent logs every step here.</li></ol>
+          </div>
         </article>
       </div>
       <dialog class="preview-dialog" id="payment-dialog" aria-labelledby="dialog-title">

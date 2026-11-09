@@ -16,16 +16,17 @@ Cold-chain deliveries can arrive late, warm, or at the wrong destination. A supp
 
 ## Solution
 
-AeroPay pairs a Velo Testnet booking checkout with a rule-based delivery agent. The server treats Velo's ledger-confirmed booking as the paid order, then checks the delivery evidence and the owner's Noir policy before authorizing the carrier payout from escrow. The temperature and destination readings in this prototype are sample inputs, not authenticated sensor or GPS attestations.
+AeroPay pairs a Velo Testnet booking checkout with a rule-based delivery agent. The server treats Velo's ledger-confirmed booking as the paid order, then checks the delivery evidence and the owner's Noir policy before authorizing the carrier payout from escrow. The cold-chain tag in this prototype is simulated in software, but its readings are cryptographically signed (Ed25519) and verified by the server before the agent may act on them. The temperature and destination values themselves are still sample data, not real sensor or GPS hardware.
 
 ## How the agentic payment works
 
 1. The shipper creates and pays a Testnet booking checkout through Velo.
 2. Velo confirms the PaymentIntent against Stellar ledger data and sends a signed webhook to AeroPay. The server verifies the signature and can also retrieve the PaymentIntent status from Velo.
-3. At delivery, the app asks the server to run the agent with a sample temperature and checkpoint result. The browser never receives the Noir or Velo secrets.
-4. The agent refuses immediately when the temperature is outside 2–8°C or the checkpoint is missing.
-5. For a safe delivery, the server requires the Velo booking to be confirmed, loads the device policy with the Noir SDK, and calls `checkPayment`.
-6. Only when the Noir policy allows the configured Testnet amount does the agent call `authorizePayment`. A failed check submits no payout; a successful authorization returns a Stellar Testnet transaction hash. The merchant claims the pending balance separately through Noir.
+3. A cold-chain tag (simulated here) signs each temperature and checkpoint reading with its Ed25519 key. The server checks the signature against its device registry, rejects stale timestamps (more than 5 minutes) and replayed nonces, and only then stores the reading. The browser never receives the Noir or Velo secrets.
+4. A verified reading wakes the agent. There is no manual pay button: the agent runs by itself. It refuses immediately when the temperature is outside 2–8°C or the checkpoint is missing.
+5. For a safe delivery, the agent holds the payout until Velo confirms the booking (a background check runs every 5 seconds, and the Velo webhook wakes it sooner), loads the device policy with the Noir SDK, and calls `checkPayment`.
+6. Only when the Noir policy allows the configured Testnet amount does the agent call `authorizePayment`, which returns a Stellar Testnet transaction hash. The merchant then claims the pending balance with Noir's `claim` (from the page when `MERCHANT_SECRET` is set, or with `npm run merchant:claim`).
+7. Every step is written to a SQLite event log that the page shows as live agent activity. A shipment is settled at most once, and a server restart in the middle of a payment is recorded as unknown instead of paying twice.
 
 The over-cap scenario asks Noir to check one stroop above the active policy maximum, then displays the refusal. That scenario never calls `authorizePayment`.
 
@@ -37,7 +38,9 @@ flowchart LR
   Web --> Server[apps/server · Express API]
   Server --> Velo[Velo SDK · Testnet checkout/status/webhook]
   Velo --> Ledger[(Stellar Testnet ledger)]
-  Server --> Agent[packages/agent · rule-based delivery agent]
+  Tag[Signed tag · Ed25519] --> Server
+  Server --> DB[(SQLite · events, readings, runs)]
+  Server --> Agent[packages/agent · autonomous delivery agent]
   Agent --> Noir[Noir SDK · deployed Soroban contracts]
   Noir --> Ledger
   Shared[packages/shared · delivery policy] --> Agent
@@ -71,7 +74,8 @@ Noir carrier payout authorized on Stellar Testnet (2.00 XLM from card escrow, ag
 ```text
 apps/
   web/                  Vite frontend
-  server/               Express API, Velo checkout/webhook, delivery endpoint
+  server/               Express API, signed telemetry, autonomous settlement loop, SQLite store, tests
+scripts/                derive-agent and device-sim (signed reading sender)
 packages/
   agent/                rule-based agent and Noir SDK calls
   shared/               delivery policy shared by server and agent
@@ -87,7 +91,7 @@ README.md               judging and setup guide
 2. Install the Noir Chrome extension and create/fund the required Stellar Testnet owner, agent, and merchant setup. Configure the deployed Noir policy and escrow.
 3. From the repository root, run `npm install` to install workspace dependencies and create the npm lockfile.
 4. Copy `.env.example` to `.env`; add the Velo Testnet API key and Noir Testnet values on the server. Never commit `.env`.
-5. Run `npm run dev`. Open the Vite app at `http://localhost:5173`; the API runs at `http://localhost:4173`.
+5. Run `npm test` to run the 10 server tests (signatures, replay protection, settle-once, restart safety, merchant claim, persistence). Then run `npm run dev`. Open the Vite app at `http://localhost:5173`; the API runs at `http://localhost:4173`.
 6. For production, set `APP_BASE_URL` to the deployed public HTTPS URL, configure Velo's webhook destination as `https://<your-host>/api/webhooks/velo`, build the web app with `npm run build`, and start the server with `npm run start --workspace @aeropay/server`.
 
 Without credentials, the page displays setup status and the offline CLI remains available. It does not pretend a simulated result is a Testnet payment.
@@ -114,6 +118,9 @@ After the first deploy, add the Velo and Noir values from your local `.env` to t
 | `ASSET_CONTRACT_ID` | Stellar Testnet asset contract used by Noir | The Testnet asset selected for the Noir policy |
 | `PAYMENT_AMOUNT` | Noir payout amount in the configured asset | Set within the registered Noir policy cap |
 | `PAYMENT_ASSET_LABEL` | Display label for the configured payout asset | For example, `XLM` or `USDC`; display only |
+| `MERCHANT_SECRET` | Optional. Merchant's Testnet secret so the page and `npm run merchant:claim` can claim | The merchant Testnet wallet. Demo only; a real merchant signs with its own wallet |
+| `DEVICE_SIM_SEED` | Seed for the simulated tag's Ed25519 key | Any long random string. Needed for `npm run device:send` |
+| `DATA_DIR` | Folder for the SQLite database (default `./data`) | On Render, use a persistent disk or the data resets on deploy |
 
 ## Screenshots
 
@@ -135,10 +142,10 @@ After the first deploy, add the Velo and Noir values from your local `.env` to t
 
 ## What's next
 
-- Connect signed cold-chain and destination evidence instead of sample inputs.
-- Run a complete Testnet rehearsal and add transaction links.
-- Deploy the app and verify the public Velo webhook can reach it.
-- Record the required two-minute demo and add the team handles.
+- Replace the simulated tag with real signed hardware readings (GPS and temperature) registered in Noir's device registry.
+- Move from SQLite on a single server to a managed database for multi-instance deploys.
+- Let the merchant claim from its own connected wallet instead of a server-held Testnet key.
+- Review and test thoroughly before any move to mainnet.
 
 ## Credits
 

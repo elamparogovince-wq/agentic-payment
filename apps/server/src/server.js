@@ -1,8 +1,18 @@
+import dns from 'node:dns';
+import net from 'node:net';
+// Some hosts (WSL, containers, Render) resolve IPv6 first and then hang on the Stellar RPC.
+// Prefer IPv4 here so the server does not depend on a NODE_OPTIONS setting.
+dns.setDefaultResultOrder('ipv4first');
+net.setDefaultAutoSelectFamily?.(false);
+
 import dotenv from 'dotenv';
 import express from 'express';
 import { Velo } from '@carts1024/velo-sdk';
 import { runDeliveryAgent, noirReadiness } from '../../../packages/agent/src/index.js';
-import { DELIVERY_POLICY, evaluateDeliveryEvidence } from '../../../packages/shared/src/index.js';
+import { DELIVERY_POLICY } from '../../../packages/shared/src/index.js';
+import { openStore } from './store.js';
+import { createDeviceRegistry, createSimulatedDevice } from './device.js';
+import { createSettlement } from './settlement.js';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
@@ -12,14 +22,47 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 dotenv.config({ path: resolve(projectRoot, '.env') });
 
 const app = express();
+app.set('trust proxy', 1);
 const port = Number(process.env.PORT || 4173);
 const webDist = resolve(projectRoot, 'apps/web/dist');
-const recentWebhooks = [];
-const seenDeliveries = new Set();
-const checkouts = new Map();
-const checkoutByShipment = new Map();
-const settlementRuns = new Map();
-const RECENT_LIMIT = 40;
+
+// ---- Storage (SQLite). Falls back to memory if the disk is not writable.
+const dataDir = process.env.DATA_DIR?.trim() || resolve(projectRoot, 'data');
+let store;
+let storageMode = 'file';
+try {
+  store = openStore(resolve(dataDir, 'aeropay.db'));
+} catch (error) {
+  console.error('Could not open the SQLite file, using memory only:', error?.message);
+  store = openStore(':memory:');
+  storageMode = 'memory';
+}
+
+// ---- Device registry + simulated tag
+const configuredDeviceHash = (process.env.DEVICE_HASH?.trim().replace(/^0x/i, '') || '').toLowerCase();
+const registry = createDeviceRegistry();
+let simulatedDevice = null;
+if (/^[a-f\d]{64}$/.test(configuredDeviceHash)) {
+  simulatedDevice = createSimulatedDevice({ deviceHash: configuredDeviceHash, seed: process.env.DEVICE_SIM_SEED?.trim() || '' });
+  registry.register(configuredDeviceHash, simulatedDevice.publicKeyHex);
+}
+
+// ---- Noir helpers
+async function noirClient() {
+  const sdk = await import('@noirx402/agent-sdk');
+  return { sdk, noir: new sdk.NoirAgentClient() };
+}
+const merchantSecretOk = /^S[A-Z2-7]{55}$/.test(process.env.MERCHANT_SECRET?.trim() || '');
+async function claimAsMerchant() {
+  const { sdk, noir } = await noirClient();
+  return noir.claim({ merchant: sdk.keypairSigner(process.env.MERCHANT_SECRET.trim()), token: process.env.ASSET_CONTRACT_ID.trim() });
+}
+async function getPendingBalance() {
+  const merchant = process.env.MERCHANT_ADDRESS?.trim();
+  if (!/^G[A-Z2-7]{55}$/.test(merchant || '')) return null;
+  const { sdk, noir } = await noirClient();
+  return sdk.fromStroops(await noir.getPendingBalance(merchant));
+}
 
 function getVelo() {
   const apiKey = process.env.VELO_API_KEY?.trim();
@@ -27,13 +70,33 @@ function getVelo() {
   return new Velo({ apiKey, environment: 'testnet', timeoutMs: 10_000 });
 }
 
-function addWebhookRecord(record) {
-  recentWebhooks.unshift(record);
-  if (recentWebhooks.length > RECENT_LIMIT) recentWebhooks.length = RECENT_LIMIT;
-}
-
 function isVeloPaymentConfirmed(status) {
   return ['paid', 'succeeded'].includes(String(status || '').toLowerCase());
+}
+
+const settlement = createSettlement({
+  store,
+  registry,
+  runAgent: runDeliveryAgent,
+  getVeloPayment: (paymentIntentId) => getVelo().paymentIntents.retrieve(paymentIntentId),
+  claimAsMerchant: merchantSecretOk && process.env.MERCHANT_ADDRESS ? claimAsMerchant : null,
+  getPendingBalance,
+});
+settlement.recoverStale();
+setInterval(() => { settlement.pollWaiting().catch((error) => console.error('Agent poll failed:', error?.message)); }, 5000).unref();
+
+// ---- Tiny per-IP rate limit for the device endpoints
+const hits = new Map();
+function rateLimit(limit, windowMs = 60_000) {
+  return (request, response, next) => {
+    const key = `${request.path}:${request.ip}`;
+    const now = Date.now();
+    const entry = hits.get(key);
+    if (!entry || now - entry.start > windowMs) { hits.set(key, { start: now, count: 1 }); return next(); }
+    entry.count += 1;
+    if (entry.count > limit) return response.status(429).json({ error: 'Too many requests. Slow down.' });
+    return next();
+  };
 }
 
 app.get('/api/health', (_request, response) => {
@@ -54,6 +117,14 @@ app.get('/api/health', (_request, response) => {
       payoutAmount: process.env.PAYMENT_AMOUNT || null,
       payoutAssetLabel: process.env.PAYMENT_ASSET_LABEL || 'configured Testnet asset',
     },
+    device: {
+      registered: Boolean(simulatedDevice),
+      publicKey: simulatedDevice?.publicKeyHex || null,
+      signing: 'Ed25519 (simulated tag)',
+    },
+    merchantClaim: { configured: merchantSecretOk, address: process.env.MERCHANT_ADDRESS || null },
+    storage: { mode: storageMode, engine: 'sqlite' },
+    autonomy: 'The agent acts on verified device readings; there is no manual pay button.',
   });
 });
 
@@ -68,7 +139,7 @@ app.post('/api/velo/checkout', express.json({ limit: '12kb' }), async (request, 
   if (!process.env.VELO_API_KEY?.trim()) {
     return response.status(503).json({ error: 'Add a Testnet VELO_API_KEY to the server .env file.' });
   }
-  const existingCheckout = checkoutByShipment.get(shipmentId);
+  const existingCheckout = store.checkoutByShipment(shipmentId);
   if (existingCheckout) {
     return response.status(200).json({
       checkoutUrl: existingCheckout.checkoutUrl,
@@ -115,17 +186,14 @@ app.post('/api/velo/checkout', express.json({ limit: '12kb' }), async (request, 
       successUrl: successUrl.toString(),
       cancelUrl: cancelUrl.toString(),
     }, { idempotencyKey });
-    const checkout = {
+    store.saveCheckout({
       shipmentId,
       paymentIntentId: session.paymentIntentId,
       checkoutUrl: session.checkoutUrl,
       amount,
       asset,
-      paymentStatus: 'pending',
-      createdAt: new Date().toISOString(),
-    };
-    checkouts.set(session.paymentIntentId, checkout);
-    checkoutByShipment.set(shipmentId, checkout);
+    });
+    store.addEvent(shipmentId, 'velo.checkout', `Velo booking checkout created: ${amount} ${asset} on Testnet.`, { paymentIntentId: session.paymentIntentId });
     return response.status(201).json({
       checkoutUrl: session.checkoutUrl,
       paymentIntentId: session.paymentIntentId,
@@ -148,11 +216,11 @@ app.get('/api/velo/payments/:paymentIntentId', async (request, response) => {
   if (!/^pi_[A-Za-z0-9_-]{4,120}$/.test(paymentIntentId)) {
     return response.status(400).json({ error: 'Invalid Velo payment intent ID.' });
   }
-  const checkout = checkouts.get(paymentIntentId);
+  const checkout = store.checkoutByIntent(paymentIntentId);
   if (!checkout) return response.status(404).json({ error: 'This server has not created that AeroPay checkout.' });
   try {
     const payment = await getVelo().paymentIntents.retrieve(paymentIntentId);
-    checkout.paymentStatus = payment.status;
+    store.setCheckoutStatus(paymentIntentId, payment.status);
     return response.json({
       paymentIntentId: payment.id,
       shipmentId: checkout.shipmentId,
@@ -169,11 +237,12 @@ app.get('/api/velo/payments/:paymentIntentId', async (request, response) => {
 });
 
 app.get('/api/velo/shipments/:shipmentId', async (request, response) => {
-  const checkout = checkoutByShipment.get(request.params.shipmentId);
+  const checkout = store.checkoutByShipment(request.params.shipmentId);
   if (!checkout) return response.status(404).json({ status: 'not_started', shipmentId: request.params.shipmentId });
   try {
     const payment = await getVelo().paymentIntents.retrieve(checkout.paymentIntentId);
-    checkout.paymentStatus = payment.status;
+    store.setCheckoutStatus(checkout.paymentIntentId, payment.status);
+    if (isVeloPaymentConfirmed(payment.status)) settlement.settle(checkout.shipmentId).catch(() => {});
     return response.json({
       shipmentId: checkout.shipmentId,
       paymentIntentId: payment.id,
@@ -203,24 +272,14 @@ app.post('/api/webhooks/velo', express.raw({ type: 'application/json', limit: '6
       signature: request.get('x-velo-signature') || null,
       secret,
     });
-    if (!seenDeliveries.has(deliveryId)) {
-      seenDeliveries.add(deliveryId);
-      const intentId = event.paymentIntent?.id || null;
-      const checkout = intentId ? checkouts.get(intentId) : null;
-      addWebhookRecord({
-        deliveryId,
-        type: event.type,
-        paymentIntentId: intentId,
-        shipmentId: checkout?.shipmentId || null,
-        receivedAt: new Date().toISOString(),
-      });
-      if (intentId && checkouts.has(intentId)) {
-        const checkout = checkouts.get(intentId);
-        checkout.paymentStatus = event.type === 'payment.succeeded'
-          ? 'succeeded'
-          : event.type === 'payment.failed'
-            ? 'failed'
-            : checkout.paymentStatus;
+    const intentId = event.paymentIntent?.id || null;
+    if (store.recordDelivery(deliveryId, event.type, intentId) && intentId) {
+      const checkout = store.checkoutByIntent(intentId);
+      if (checkout) {
+        const status = event.type === 'payment.succeeded' ? 'succeeded' : event.type === 'payment.failed' ? 'failed' : checkout.paymentStatus;
+        store.setCheckoutStatus(intentId, status);
+        store.addEvent(checkout.shipmentId, 'velo.webhook', `Velo webhook received: ${event.type}.`, { type: event.type });
+        if (status === 'succeeded') settlement.settle(checkout.shipmentId).catch(() => {});
       }
     }
     return response.status(200).send('OK');
@@ -230,10 +289,21 @@ app.post('/api/webhooks/velo', express.raw({ type: 'application/json', limit: '6
 });
 
 app.get('/api/velo/events', (_request, response) => {
-  response.json({ events: recentWebhooks });
+  response.json({ events: store.recentDeliveries() });
 });
 
-app.post('/api/agent/deliver', express.json({ limit: '12kb' }), async (request, response) => {
+// A verified device reading is what wakes the agent. Anyone can POST here, but only readings
+// signed by a registered device are accepted (see device.js).
+app.post('/api/telemetry', rateLimit(60), express.json({ limit: '4kb' }), async (request, response) => {
+  const result = await settlement.ingestReading(request.body);
+  return response.status(result.status).json(result.body);
+});
+
+// Demo helper: the simulated tag signs a reading and sends it through the same verified path.
+app.post('/api/demo/device-reading', rateLimit(30), express.json({ limit: '4kb' }), async (request, response) => {
+  if (!simulatedDevice) {
+    return response.status(503).json({ error: 'The simulated device needs a valid DEVICE_HASH on the server.', missing: ['DEVICE_HASH'] });
+  }
   const { shipmentId, temperatureC, checkpointMatched, scenario = 'success' } = request.body ?? {};
   if (typeof shipmentId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(shipmentId)) {
     return response.status(400).json({ error: 'A valid shipmentId is required.' });
@@ -244,65 +314,47 @@ app.post('/api/agent/deliver', express.json({ limit: '12kb' }), async (request, 
   if (!['success', 'breach', 'overcap'].includes(scenario)) {
     return response.status(400).json({ error: 'scenario must be success, breach, or overcap.' });
   }
-  const runKey = `${shipmentId}:${scenario}`;
-  if (settlementRuns.has(runKey)) {
-    return response.status(409).json({ error: 'The agent already processed this shipment ID. Use a new shipment ID for a new attempt.' });
-  }
+  const signed = simulatedDevice.signReading({ shipmentId, temperatureC: Number(temperatureC), checkpointMatched });
+  const result = await settlement.ingestReading({ ...signed, scenario });
+  return response.status(result.status).json({ ...result.body, signedBy: simulatedDevice.publicKeyHex });
+});
 
-  settlementRuns.set(runKey, { state: 'processing', shipmentId, scenario, startedAt: new Date().toISOString() });
+// Live activity feed for one shipment. The page polls this; it also restores state after a reload.
+app.get('/api/shipments/:shipmentId/events', (request, response) => {
+  const { shipmentId } = request.params;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(shipmentId)) return response.status(400).json({ error: 'Invalid shipment ID.' });
+  const after = Math.max(0, Number.parseInt(String(request.query.after ?? '0'), 10) || 0);
+  const run = store.getRun(shipmentId);
+  const checkout = store.checkoutByShipment(shipmentId);
+  response.json({
+    shipmentId,
+    events: store.eventsAfter(shipmentId, after),
+    run: run ? { state: run.state, result: run.result } : null,
+    booking: checkout ? { paymentStatus: checkout.paymentStatus, amount: checkout.amount, asset: checkout.asset } : null,
+  });
+});
+
+app.get('/api/noir/pending', async (_request, response) => {
   try {
-    const evidence = evaluateDeliveryEvidence({ temperatureC, checkpointMatched });
-    if (scenario === 'success' && evidence.allowed) {
-      const checkout = checkoutByShipment.get(shipmentId);
-      if (!checkout) {
-        settlementRuns.delete(runKey);
-        return response.status(409).json({
-          shipmentId,
-          decision: 'waiting_for_velo',
-          paymentSubmitted: false,
-          reason: 'Create and pay the Velo Testnet booking checkout before releasing the Noir carrier payout.',
-        });
-      }
-      const payment = await getVelo().paymentIntents.retrieve(checkout.paymentIntentId);
-      checkout.paymentStatus = payment.status;
-      if (!isVeloPaymentConfirmed(payment.status)) {
-        settlementRuns.delete(runKey);
-        return response.status(409).json({
-          shipmentId,
-          decision: 'waiting_for_velo',
-          paymentSubmitted: false,
-          veloStatus: payment.status,
-          reason: `Velo has not confirmed the booking yet (status: ${payment.status}). No Noir payout was sent.`,
-        });
-      }
-    }
-    const result = await runDeliveryAgent({ temperatureC, checkpointMatched, scenario }, { authorize: true });
-    if (result.decision === 'needs_setup') settlementRuns.delete(runKey);
-    else settlementRuns.set(runKey, { ...result, shipmentId, scenario, finishedAt: new Date().toISOString() });
-    return response.status(result.decision === 'needs_setup' ? 503 : 200).json({ shipmentId, ...result });
+    const pending = await getPendingBalance();
+    return response.json({ pending, label: process.env.PAYMENT_ASSET_LABEL || 'XLM', merchant: process.env.MERCHANT_ADDRESS || null, claimConfigured: merchantSecretOk });
   } catch (error) {
-    settlementRuns.set(runKey, {
-      decision: 'unknown',
-      shipmentId,
-      scenario,
-      paymentSubmitted: 'unknown',
-      reason: 'The agent call did not return a confirmed result. Check the Testnet ledger before retrying.',
-      finishedAt: new Date().toISOString(),
-    });
-    console.error('Noir agent operation returned an error:', error?.name || 'Error');
-    return response.status(502).json({
-      shipmentId,
-      decision: 'unknown',
-      paymentSubmitted: 'unknown',
-      reason: 'No confirmed result was returned. Check the Testnet ledger before retrying this shipment.',
-    });
+    console.error('Pending balance read failed:', error?.message);
+    return response.status(502).json({ error: 'Could not read the pending balance from Noir.' });
   }
 });
 
+app.post('/api/shipments/:shipmentId/claim', rateLimit(10), async (request, response) => {
+  const { shipmentId } = request.params;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(shipmentId)) return response.status(400).json({ error: 'Invalid shipment ID.' });
+  const result = await settlement.claim(shipmentId);
+  return response.status(result.status).json(result.body);
+});
+
 app.get('/api/agent/shipments/:shipmentId', (request, response) => {
-  const result = [...settlementRuns.values()].find((entry) => entry.shipmentId === request.params.shipmentId);
-  if (!result) return response.status(404).json({ error: 'No agent decision is recorded for that shipment.' });
-  return response.json({ shipmentId: request.params.shipmentId, ...result });
+  const run = store.getRun(request.params.shipmentId);
+  if (!run) return response.status(404).json({ error: 'No agent decision is recorded for that shipment.' });
+  return response.json({ shipmentId: request.params.shipmentId, state: run.state, ...run.result });
 });
 
 app.use(express.json({ limit: '20kb' }));

@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js"
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
   "dependencies": {
     "@carts1024/velo-sdk": "0.1.0-alpha.4",

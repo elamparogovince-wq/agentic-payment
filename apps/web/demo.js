@@ -97,6 +97,9 @@ async function loadServiceStatus() {
     $('dialog-amount').textContent = apiServices.noir.configured
       ? `${apiServices.noir.payoutAmount} ${apiServices.noir.payoutAssetLabel} · Testnet`
       : 'Noir Testnet key not configured';
+    if (!apiServices.noir.configured && apiServices.noir.missing?.length) {
+      $('button-note').textContent = `Noir payout needs these server settings: ${apiServices.noir.missing.join(', ')}.`;
+    }
     if (apiServices.noir.configured && apiServices.velo.configured) {
       $('service-status').classList.add('services-ready');
     }
@@ -175,19 +178,144 @@ function showAgentResult(result) {
   }
 }
 
-async function runAgent() {
+// ---- Autonomous agent: the tag signs a reading, the server verifies it, the agent acts.
+let feedAfter = 0;
+let feedTimer = null;
+let claimTxShown = false;
+
+function clockTime(iso) {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour12: false });
+}
+
+function addFeedItem(event) {
+  const list = $('agent-feed');
+  list.querySelector('.feed-empty')?.remove();
+  const item = document.createElement('li');
+  item.className = `feed-item ${event.type.split('.')[0]} ${event.type.replace('.', '-')}`;
+  const time = document.createElement('time');
+  time.dateTime = event.ts;
+  time.textContent = clockTime(event.ts);
+  const text = document.createElement('span');
+  text.textContent = event.message;
+  item.append(time, text);
+  const hash = event.data?.transactionHash || event.data?.signature;
+  if (hash) {
+    const chip = document.createElement('code');
+    chip.className = 'hash';
+    chip.dataset.copy = hash;
+    chip.tabIndex = 0;
+    chip.setAttribute('role', 'button');
+    chip.title = 'Click to copy';
+    chip.textContent = shortHash(hash);
+    item.append(chip);
+  }
+  list.append(item);
+  list.scrollTop = list.scrollHeight;
+  $('feed-count').textContent = `${list.querySelectorAll('.feed-item').length} events`;
+}
+
+function showClaimBox(show) {
+  $('claim-box').hidden = !show;
+}
+
+async function loadPending() {
+  const note = $('claim-note');
+  const button = $('claim-button');
+  try {
+    const response = await fetch('/api/noir/pending');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+    $('claim-pending').textContent = data.pending === null ? '—' : `${data.pending} ${data.label}`;
+    button.disabled = !data.claimConfigured;
+    note.textContent = data.claimConfigured
+      ? 'The merchant collects the pending balance. This signs a second Testnet transaction.'
+      : 'The merchant claims with its own wallet. From a terminal: npm run merchant:claim';
+  } catch {
+    $('claim-pending').textContent = '—';
+    button.disabled = true;
+    note.textContent = 'Could not read the pending balance right now.';
+  }
+}
+
+function applyAgentEvent(event, { restore }) {
+  const data = event.data || {};
+  if (event.type === 'telemetry.accepted') {
+    setSteps({ agent: 'active' }, 'The agent is checking the reading');
+  } else if (event.type === 'agent.waiting') {
+    setSteps({ agent: 'waiting', velo: stepState.velo === 'done' ? 'done' : 'active' }, 'Holding the payout until Velo confirms');
+    if (!restore && $('payment-dialog').open) showAgentResult(data);
+  } else if (event.type === 'velo.confirmed') {
+    setSteps({ booking: 'done', velo: 'done' }, 'Velo confirmed. The agent is paying.');
+  } else if (['agent.authorized', 'agent.denied', 'agent.unknown', 'agent.needs_setup'].includes(event.type)) {
+    showAgentResult(data);
+    if (!restore) {
+      const dialog = $('payment-dialog');
+      if (!dialog.open) dialog.showModal();
+    }
+    if (event.type === 'agent.authorized') { showClaimBox(true); loadPending(); }
+  } else if (event.type === 'merchant.claimed') {
+    claimTxShown = true;
+    setSteps({ claim: 'done' }, 'The merchant claimed the pending balance.');
+    showClaimBox(true);
+    $('claim-button').disabled = true;
+    $('claim-button').textContent = 'Claimed';
+    $('claim-note').textContent = '';
+    const holder = $('claim-note');
+    holder.textContent = 'Claim transaction · ';
+    const chip = document.createElement('code');
+    chip.className = 'hash';
+    chip.dataset.copy = data.transactionHash;
+    chip.tabIndex = 0;
+    chip.setAttribute('role', 'button');
+    chip.textContent = shortHash(data.transactionHash);
+    holder.append(chip);
+  }
+}
+
+async function pollEvents({ restore = false } = {}) {
+  const shipmentId = sessionStorage.getItem('aeropay.shipmentId');
+  if (!shipmentId) return null;
+  try {
+    const response = await fetch(`/api/shipments/${encodeURIComponent(shipmentId)}/events?after=${feedAfter}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    for (const event of data.events) {
+      feedAfter = Math.max(feedAfter, event.id);
+      addFeedItem(event);
+      applyAgentEvent(event, { restore });
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function startPolling() {
+  if (feedTimer) return;
+  let idle = 0;
+  feedTimer = setInterval(async () => {
+    const data = await pollEvents();
+    idle += 1;
+    const state = data?.run?.state;
+    // Keep watching while the agent is waiting or working; stop shortly after a final decision.
+    const finished = state && !['waiting', 'processing'].includes(state);
+    if (finished || idle > 400) { clearInterval(feedTimer); feedTimer = null; }
+  }, 1500);
+}
+
+async function startDelivery() {
   const scenario = scenarios[selectedScenario];
   const dialog = $('payment-dialog');
   $('agent-transaction-link').hidden = true;
   $('agent-result-icon').className = 'dialog-check wait';
   $('agent-result-icon').textContent = '…';
-  $('dialog-title').textContent = 'The agent is checking delivery.';
-  $('agent-result-copy').textContent = 'Checking delivery evidence and the Testnet policies on the server…';
+  $('dialog-title').textContent = 'The tag is sending a signed reading.';
+  $('agent-result-copy').textContent = 'The server verifies the Ed25519 signature, then the agent decides on its own.';
   $('dialog-booking-status').textContent = $('velo-pill').textContent;
   if (!dialog.open) dialog.showModal();
   $('settle-button').disabled = true;
   try {
-    const response = await fetch('/api/agent/deliver', {
+    const response = await fetch('/api/demo/device-reading', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -198,11 +326,53 @@ async function runAgent() {
       }),
     });
     const result = await response.json();
-    showAgentResult(result);
+    if (!response.ok) {
+      if (result.settled) {
+        $('agent-result-icon').className = 'dialog-check wait';
+        $('agent-result-icon').textContent = '!';
+        $('dialog-title').textContent = 'This shipment is already settled.';
+        $('agent-result-copy').textContent = 'Each shipment is paid at most once. Choose New shipment to run another delivery.';
+        return;
+      }
+      showAgentResult({
+        decision: result.missing ? 'needs_setup' : 'unknown',
+        reason: result.missing ? `The server is missing: ${result.missing.join(', ')}.` : (result.error || 'The reading was not accepted.'),
+      });
+      return;
+    }
+    await pollEvents();
+    startPolling();
   } catch {
     showAgentResult({ decision: 'unknown', reason: 'Could not reach the AeroPay server. No result was confirmed.' });
   } finally {
-    $('settle-button').disabled = false;
+    setTimeout(() => { $('settle-button').disabled = false; }, 1200);
+  }
+}
+
+async function claimAsMerchant() {
+  const shipmentId = sessionStorage.getItem('aeropay.shipmentId');
+  const button = $('claim-button');
+  button.disabled = true;
+  $('claim-note').textContent = 'Signing the claim on Stellar Testnet…';
+  try {
+    const response = await fetch(`/api/shipments/${encodeURIComponent(shipmentId)}/claim`, { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The claim did not complete.');
+    await pollEvents();
+  } catch (error) {
+    $('claim-note').textContent = error.message;
+    button.disabled = false;
+  }
+}
+
+async function restoreShipment() {
+  const data = await pollEvents({ restore: true });
+  if (!data) return;
+  const state = data.run?.state;
+  if (state === 'waiting' || state === 'processing') startPolling();
+  if (state === 'authorized') {
+    const claimed = data.run.result?.claimTransactionHash;
+    if (claimed && !claimTxShown) applyAgentEvent({ type: 'merchant.claimed', data: { transactionHash: claimed } }, { restore: true });
   }
 }
 
@@ -464,10 +634,10 @@ function showScenario(key) {
     : !tempOk ? 'Temperature exceeded the safe range. Escrow remains locked.' : 'This request exceeds the agent’s per-payment cap.';
   $('decision-state').textContent = allowed ? 'ALLOW' : 'DENY';
   $('settle-button').disabled = false;
-  $('settle-label').textContent = key === 'success' ? 'Run delivery agent' : 'Run refusal check';
+  $('settle-label').textContent = key === 'success' ? 'Start delivery' : 'Start delivery (refusal check)';
   $('button-note').textContent = allowed
-    ? 'The agent decides. A live Noir payout requires a Velo-confirmed booking and an active Testnet policy.'
-    : 'Run the agent to see why the request is refused. No payout is sent for a failed check.';
+    ? 'The tag signs a reading. The agent verifies it, waits for the Velo booking, checks the Noir policy, then pays on its own.'
+    : 'The tag signs the reading and the agent decides. No payout is sent for a failed check.';
   timeline.innerHTML = `
     <div class="event"><span class="event-icon">01</span><div><b>Reading received</b><small>Cold-chain tag · ${scenario.temp.toFixed(1)}°C · sample data</small></div><span class="event-state${tempOk ? '' : ' bad'}">${tempOk ? 'IN RANGE' : 'BREACH'}</span></div>
     <div class="event"><span class="event-icon">02</span><div><b>Destination reached</b><small>${points.delivery.label} · sample location</small></div><span class="event-state">REACHED</span></div>
@@ -488,11 +658,17 @@ $('place-search-form').addEventListener('submit', searchPlace);
 document.querySelectorAll('.scenario-btn').forEach((button) => {
   button.addEventListener('click', () => showScenario(button.dataset.scenario));
 });
-$('settle-button').addEventListener('click', runAgent);
+$('settle-button').addEventListener('click', startDelivery);
+$('claim-button').addEventListener('click', claimAsMerchant);
+$('new-shipment').addEventListener('click', () => {
+  sessionStorage.removeItem('aeropay.shipmentId');
+  window.location.assign(window.location.pathname);
+});
 $('velo-checkout-button').addEventListener('click', createVeloCheckout);
 updateRouteLabels();
 initializeMap();
 loadServiceStatus().then(async () => {
+  restoreShipment();
   const query = new URLSearchParams(window.location.search);
   if (query.get('velo') === 'return') {
     setVeloStatus('Returned from Velo. Checking the Testnet ledger…', 'wait');

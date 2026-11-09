@@ -610,3 +610,21 @@ body { overflow-x: clip; }
   .site-header .brand { margin-right: auto; }
 }
 @media (max-width: 960px) { .hero::before { inset: 0 0 auto auto; width: min(520px, 100%); } }
+
+/* ---------- Agent activity feed + merchant claim ---------- */
+.feed-wrap { margin: 16px 0 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+.agent-feed { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; display: grid; gap: 0; }
+.feed-empty { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.feed-item { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.4; }
+.feed-item:first-child { border-top: 0; padding-top: 0; }
+.feed-item time { color: var(--muted); font: 500 12px var(--mono); padding-top: 1px; }
+.feed-item .hash { grid-column: 2; justify-self: start; }
+.feed-item.agent-authorized span, .feed-item.merchant-claimed span { color: var(--green-deep); font-weight: 600; }
+.feed-item.agent-denied span { color: var(--red); font-weight: 600; }
+.feed-item.agent-waiting span, .feed-item.agent-unknown span, .feed-item.agent-needs_setup span { color: var(--amber); }
+.claim-box { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.claim-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.claim-row b { display: block; font-size: 14px; }
+.claim-row small { display: block; color: var(--muted); font-size: 12px; }
+.claim-amount { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.link-button { padding: 0; border: 0; background: none; color: var(--green-deep); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }

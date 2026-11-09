@@ -10,8 +10,10 @@ services:
       - key: NODE_VERSION
         value: 24.22.1
       - key: VELO_CHECKOUT_ASSET
-        value: USDC
+        value: native
       - key: VELO_CHECKOUT_AMOUNT
-        value: "1.00"
+        value: "10.00"
       - key: PAYMENT_ASSET_LABEL
-        value: USDC
+        value: XLM
+      - key: NODE_OPTIONS
+        value: --dns-result-order=ipv4first --no-network-family-autoselection
